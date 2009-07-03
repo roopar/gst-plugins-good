@@ -43,6 +43,7 @@
 #endif
 
 #include "gstv4l2tuner.h"
+#include "gstv4l2bufferpool.h"
 
 GST_DEBUG_CATEGORY_EXTERN (v4l2src_debug);
 #define GST_CAT_DEFAULT v4l2src_debug
@@ -57,299 +58,20 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2src_debug);
 #endif
 
 
-#define GST_TYPE_V4L2_BUFFER (gst_v4l2_buffer_get_type())
-#define GST_IS_V4L2_BUFFER(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_V4L2_BUFFER))
-#define GST_V4L2_BUFFER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_V4L2_BUFFER, GstV4l2Buffer))
-
-static GstBufferClass *v4l2buffer_parent_class = NULL;
-
 /* Local functions */
 static gboolean
 gst_v4l2src_get_nearest_size (GstV4l2Src * v4l2src, guint32 pixelformat,
     gint * width, gint * height);
-static void gst_v4l2_buffer_pool_destroy (GstV4l2BufferPool * pool);
 
-static void
-gst_v4l2_buffer_finalize (GstV4l2Buffer * buffer)
-{
-  GstV4l2BufferPool *pool;
-  gboolean resuscitated = FALSE;
-  gint index;
-
-  pool = buffer->pool;
-
-  index = buffer->vbuffer.index;
-
-  GST_LOG ("finalizing buffer %p %d", buffer, index);
-
-  g_mutex_lock (pool->lock);
-  if (GST_BUFFER_SIZE (buffer) != 0)
-    /* BUFFER_SIZE is only set if the frame was dequeued */
-    pool->num_live_buffers--;
-
-  if (pool->running) {
-    if (v4l2_ioctl (pool->video_fd, VIDIOC_QBUF, &buffer->vbuffer) < 0) {
-      GST_WARNING ("could not requeue buffer %p %d", buffer, index);
-    } else {
-      /* FIXME: check that the caps didn't change */
-      GST_LOG ("reviving buffer %p, %d", buffer, index);
-      gst_buffer_ref (GST_BUFFER (buffer));
-      GST_BUFFER_SIZE (buffer) = 0;
-      pool->buffers[index] = buffer;
-      resuscitated = TRUE;
-    }
-  } else {
-    GST_LOG ("the pool is shutting down");
-  }
-  g_mutex_unlock (pool->lock);
-
-  if (!resuscitated) {
-    GST_LOG ("buffer %p not recovered, unmapping", buffer);
-    gst_mini_object_unref (GST_MINI_OBJECT (pool));
-    v4l2_munmap ((void *) GST_BUFFER_DATA (buffer), buffer->vbuffer.length);
-
-    GST_MINI_OBJECT_CLASS (v4l2buffer_parent_class)->finalize (GST_MINI_OBJECT
-        (buffer));
-  }
-}
-
-static void
-gst_v4l2_buffer_class_init (gpointer g_class, gpointer class_data)
-{
-  GstMiniObjectClass *mini_object_class = GST_MINI_OBJECT_CLASS (g_class);
-
-  v4l2buffer_parent_class = g_type_class_peek_parent (g_class);
-
-  mini_object_class->finalize = (GstMiniObjectFinalizeFunction)
-      gst_v4l2_buffer_finalize;
-}
-
-static GType
-gst_v4l2_buffer_get_type (void)
-{
-  static GType _gst_v4l2_buffer_type;
-
-  if (G_UNLIKELY (_gst_v4l2_buffer_type == 0)) {
-    static const GTypeInfo v4l2_buffer_info = {
-      sizeof (GstBufferClass),
-      NULL,
-      NULL,
-      gst_v4l2_buffer_class_init,
-      NULL,
-      NULL,
-      sizeof (GstV4l2Buffer),
-      0,
-      NULL,
-      NULL
-    };
-    _gst_v4l2_buffer_type = g_type_register_static (GST_TYPE_BUFFER,
-        "GstV4l2Buffer", &v4l2_buffer_info, 0);
-  }
-  return _gst_v4l2_buffer_type;
-}
-
-static GstV4l2Buffer *
-gst_v4l2_buffer_new (GstV4l2BufferPool * pool, guint index, GstCaps * caps)
-{
-  GstV4l2Buffer *ret;
-  guint8 *data;
-
-  ret = (GstV4l2Buffer *) gst_mini_object_new (GST_TYPE_V4L2_BUFFER);
-
-  GST_LOG ("creating buffer %u, %p in pool %p", index, ret, pool);
-
-  ret->pool =
-      (GstV4l2BufferPool *) gst_mini_object_ref (GST_MINI_OBJECT (pool));
-
-  ret->vbuffer.index = index;
-  ret->vbuffer.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  ret->vbuffer.memory = V4L2_MEMORY_MMAP;
-
-  if (v4l2_ioctl (pool->video_fd, VIDIOC_QUERYBUF, &ret->vbuffer) < 0)
-    goto querybuf_failed;
-
-  GST_LOG ("  index:     %u", ret->vbuffer.index);
-  GST_LOG ("  type:      %d", ret->vbuffer.type);
-  GST_LOG ("  bytesused: %u", ret->vbuffer.bytesused);
-  GST_LOG ("  flags:     %08x", ret->vbuffer.flags);
-  GST_LOG ("  field:     %d", ret->vbuffer.field);
-  GST_LOG ("  memory:    %d", ret->vbuffer.memory);
-  if (ret->vbuffer.memory == V4L2_MEMORY_MMAP)
-    GST_LOG ("  MMAP offset:  %u", ret->vbuffer.m.offset);
-  GST_LOG ("  length:    %u", ret->vbuffer.length);
-  GST_LOG ("  input:     %u", ret->vbuffer.input);
-
-  data = (guint8 *) v4l2_mmap (0, ret->vbuffer.length,
-      PROT_READ | PROT_WRITE, MAP_SHARED, pool->video_fd,
-      ret->vbuffer.m.offset);
-
-  if (data == MAP_FAILED)
-    goto mmap_failed;
-
-  GST_BUFFER_DATA (ret) = data;
-  GST_BUFFER_SIZE (ret) = ret->vbuffer.length;
-
-  GST_BUFFER_FLAG_SET (ret, GST_BUFFER_FLAG_READONLY);
-
-  gst_buffer_set_caps (GST_BUFFER (ret), caps);
-
-  return ret;
-
-  /* ERRORS */
-querybuf_failed:
-  {
-    gint errnosave = errno;
-
-    GST_WARNING ("Failed QUERYBUF: %s", g_strerror (errnosave));
-    gst_buffer_unref (GST_BUFFER (ret));
-    errno = errnosave;
-    return NULL;
-  }
-mmap_failed:
-  {
-    gint errnosave = errno;
-
-    GST_WARNING ("Failed to mmap: %s", g_strerror (errnosave));
-    gst_buffer_unref (GST_BUFFER (ret));
-    errno = errnosave;
-    return NULL;
-  }
-}
-
-#define GST_TYPE_V4L2_BUFFER_POOL (gst_v4l2_buffer_pool_get_type())
-#define GST_IS_V4L2_BUFFER_POOL(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_V4L2_BUFFER_POOL))
-#define GST_V4L2_BUFFER_POOL(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_V4L2_BUFFER_POOL, GstV4l2BufferPool))
-
-static GstMiniObjectClass *buffer_pool_parent_class = NULL;
-
-static void
-gst_v4l2_buffer_pool_finalize (GstV4l2BufferPool * pool)
-{
-  g_mutex_free (pool->lock);
-  pool->lock = NULL;
-
-  if (pool->video_fd >= 0)
-    v4l2_close (pool->video_fd);
-
-  if (pool->buffers) {
-    g_free (pool->buffers);
-    pool->buffers = NULL;
-  }
-
-  GST_MINI_OBJECT_CLASS (buffer_pool_parent_class)->finalize (GST_MINI_OBJECT
-      (pool));
-}
-
-static void
-gst_v4l2_buffer_pool_init (GstV4l2BufferPool * pool, gpointer g_class)
-{
-  pool->lock = g_mutex_new ();
-  pool->running = FALSE;
-  pool->num_live_buffers = 0;
-}
-
-static void
-gst_v4l2_buffer_pool_class_init (gpointer g_class, gpointer class_data)
-{
-  GstMiniObjectClass *mini_object_class = GST_MINI_OBJECT_CLASS (g_class);
-
-  buffer_pool_parent_class = g_type_class_peek_parent (g_class);
-
-  mini_object_class->finalize = (GstMiniObjectFinalizeFunction)
-      gst_v4l2_buffer_pool_finalize;
-}
-
-static GType
-gst_v4l2_buffer_pool_get_type (void)
-{
-  static GType _gst_v4l2_buffer_pool_type;
-
-  if (G_UNLIKELY (_gst_v4l2_buffer_pool_type == 0)) {
-    static const GTypeInfo v4l2_buffer_pool_info = {
-      sizeof (GstBufferClass),
-      NULL,
-      NULL,
-      gst_v4l2_buffer_pool_class_init,
-      NULL,
-      NULL,
-      sizeof (GstV4l2BufferPool),
-      0,
-      (GInstanceInitFunc) gst_v4l2_buffer_pool_init,
-      NULL
-    };
-    _gst_v4l2_buffer_pool_type = g_type_register_static (GST_TYPE_MINI_OBJECT,
-        "GstV4l2BufferPool", &v4l2_buffer_pool_info, 0);
-  }
-  return _gst_v4l2_buffer_pool_type;
-}
-
-static GstV4l2BufferPool *
-gst_v4l2_buffer_pool_new (GstV4l2Src * v4l2src, gint fd, gint num_buffers,
-    GstCaps * caps)
-{
-  GstV4l2BufferPool *pool;
-  gint n;
-
-  pool = (GstV4l2BufferPool *) gst_mini_object_new (GST_TYPE_V4L2_BUFFER_POOL);
-
-  pool->video_fd = v4l2_dup (fd);
-  if (pool->video_fd < 0)
-    goto dup_failed;
-
-  pool->buffer_count = num_buffers;
-  pool->buffers = g_new0 (GstV4l2Buffer *, num_buffers);
-
-  for (n = 0; n < num_buffers; n++) {
-    pool->buffers[n] = gst_v4l2_buffer_new (pool, n, caps);
-    if (!pool->buffers[n])
-      goto buffer_new_failed;
-  }
-
-  return pool;
-
-  /* ERRORS */
-dup_failed:
-  {
-    gint errnosave = errno;
-
-    gst_mini_object_unref (GST_MINI_OBJECT (pool));
-
-    errno = errnosave;
-
-    return NULL;
-  }
-buffer_new_failed:
-  {
-    gint errnosave = errno;
-
-    gst_v4l2_buffer_pool_destroy (pool);
-
-    errno = errnosave;
-
-    return NULL;
-  }
-}
 
 static gboolean
-gst_v4l2_buffer_pool_activate (GstV4l2BufferPool * pool, GstV4l2Src * v4l2src)
+gst_v4l2src_buffer_pool_activate (GstV4l2BufferPool * pool, GstV4l2Src * v4l2src)
 {
-  gint n;
+  GstV4l2Buffer *buf;
 
-  g_mutex_lock (pool->lock);
-
-  for (n = 0; n < pool->buffer_count; n++) {
-    struct v4l2_buffer *buf;
-
-    buf = &pool->buffers[n]->vbuffer;
-
-    GST_LOG ("enqueue pool buffer %d", n);
-
-    if (v4l2_ioctl (pool->video_fd, VIDIOC_QBUF, buf) < 0)
+  while ((buf = gst_v4l2_buffer_pool_get (pool)) != NULL)
+    if (!gst_v4l2_buffer_pool_qbuf (pool, buf))
       goto queue_failed;
-  }
-  pool->running = TRUE;
-
-  g_mutex_unlock (pool->lock);
 
   return TRUE;
 
@@ -360,42 +82,9 @@ queue_failed:
         (_("Could not enqueue buffers in device '%s'."),
             v4l2src->v4l2object->videodev),
         ("enqueing buffer %d/%d failed: %s",
-            n, v4l2src->num_buffers, g_strerror (errno)));
-    g_mutex_unlock (pool->lock);
+            buf->vbuffer.index, v4l2src->num_buffers, g_strerror (errno)));
     return FALSE;
   }
-}
-
-static void
-gst_v4l2_buffer_pool_destroy (GstV4l2BufferPool * pool)
-{
-  gint n;
-
-  g_mutex_lock (pool->lock);
-  pool->running = FALSE;
-  g_mutex_unlock (pool->lock);
-
-  GST_DEBUG ("destroy pool");
-
-  /* after this point, no more buffers will be queued or dequeued; no buffer
-   * from pool->buffers that is NULL will be set to a buffer, and no buffer that
-   * is not NULL will be pushed out. */
-
-  /* miniobjects have no dispose, so they can't break ref-cycles, as buffers ref
-   * the pool, we need to unref the buffer to properly finalize te pool */
-  for (n = 0; n < pool->buffer_count; n++) {
-    GstBuffer *buf;
-
-    g_mutex_lock (pool->lock);
-    buf = GST_BUFFER (pool->buffers[n]);
-    g_mutex_unlock (pool->lock);
-
-    if (buf)
-      /* we own the ref if the buffer is in pool->buffers; drop it. */
-      gst_buffer_unref (buf);
-  }
-
-  gst_mini_object_unref (GST_MINI_OBJECT (pool));
 }
 
 /* complete made up ranking, the values themselves are meaningless */
@@ -1080,7 +769,7 @@ gst_v4l2src_grab_frame (GstV4l2Src * v4l2src, GstBuffer ** buf)
     }
   }
 
-  g_mutex_lock (v4l2src->pool->lock);
+  GST_V4L2_BUFFER_POOL_LOCK (v4l2src->pool);
 
   index = buffer.index;
 
@@ -1101,7 +790,7 @@ gst_v4l2src_grab_frame (GstV4l2Src * v4l2src, GstBuffer ** buf)
   need_copy = v4l2src->always_copy
       || (v4l2src->pool->num_live_buffers == v4l2src->pool->buffer_count);
 
-  g_mutex_unlock (v4l2src->pool->lock);
+  GST_V4L2_BUFFER_POOL_UNLOCK (v4l2src->pool);
 
   /* this can change at every frame, esp. with jpeg */
   GST_BUFFER_SIZE (pool_buffer) = buffer.bytesused;
@@ -1166,7 +855,7 @@ no_buffer:
         (_("Failed trying to get video frames from device '%s'."),
             v4l2src->v4l2object->videodev),
         (_("No free buffers found in the pool at index %d."), index));
-    g_mutex_unlock (v4l2src->pool->lock);
+    GST_V4L2_BUFFER_POOL_UNLOCK (v4l2src->pool);
     return GST_FLOW_ERROR;
   }
 /*
@@ -1377,7 +1066,7 @@ gst_v4l2src_capture_init (GstV4l2Src * v4l2src, GstCaps * caps)
     GST_LOG_OBJECT (v4l2src, "initiating buffer pool");
 
     if (!(v4l2src->pool = gst_v4l2_buffer_pool_new (v4l2src, fd,
-                v4l2src->num_buffers, caps)))
+                v4l2src->num_buffers, caps, TRUE)))
       goto buffer_pool_new_failed;
 
     GST_INFO_OBJECT (v4l2src, "capturing buffers via mmap()");
@@ -1449,7 +1138,7 @@ gst_v4l2src_capture_start (GstV4l2Src * v4l2src)
   v4l2src->quit = FALSE;
 
   if (v4l2src->use_mmap) {
-    if (!gst_v4l2_buffer_pool_activate (v4l2src->pool, v4l2src))
+    if (!gst_v4l2src_buffer_pool_activate (v4l2src->pool, v4l2src))
       goto pool_activate_failed;
 
     if (v4l2_ioctl (fd, VIDIOC_STREAMON, &type) < 0)

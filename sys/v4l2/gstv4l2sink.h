@@ -1,0 +1,66 @@
+/* GStreamer
+ *
+ * Copyright (C) 2009 Texas Instruments, Inc - http://www.ti.com/
+ *
+ * Description: V4L2 sink element
+ *  Created on: Jul 2, 2009
+ *      Author: Rob Clark <rob@ti.com>
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Library General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Library General Public License for more details.
+ *
+ * You should have received a copy of the GNU Library General Public
+ * License along with this library; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 02111-1307, USA.
+ */
+
+#ifndef __GSTV4L2SINK_H__
+#define __GSTV4L2SINK_H__
+
+#include <gst/video/gstvideosink.h>
+#include <gstv4l2object.h>
+#include <gstv4l2bufferpool.h>
+
+GST_DEBUG_CATEGORY_EXTERN (v4l2sink_debug);
+
+
+G_BEGIN_DECLS
+
+#define GST_TYPE_V4L2_SINK \
+  (gst_v4l2_sink_get_type())
+#define GST_V4L2_SINK(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_V4L2_SINK, GstV4l2Sink))
+#define GST_V4L2_SINK_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_V4L2_SINK, GstV4l2SinkClass))
+#define GST_IS_V4L2_SINK(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_V4L2_SINK))
+#define GST_IS_V4L2_SINK_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_V4L2_SINK))
+
+typedef struct _GstV4l2Sink GstV4l2Sink;
+typedef struct _GstV4l2SinkClass GstV4l2SinkClass;
+
+
+struct _GstV4l2Sink {
+  /* Our element stuff */
+  GstVideoSink videosink;
+};
+
+struct _GstV4l2SinkClass {
+  GstVideoSinkClass parent_class;
+};
+
+GType gst_v4l2_sink_get_type(void);
+
+G_END_DECLS
+
+
+#endif /* __GSTV4L2SINK_H__ */
