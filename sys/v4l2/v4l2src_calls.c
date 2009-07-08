@@ -45,6 +45,8 @@
 #include "gstv4l2tuner.h"
 #include "gstv4l2bufferpool.h"
 
+#include "gst/gst-i18n-plugin.h"
+
 GST_DEBUG_CATEGORY_EXTERN (v4l2src_debug);
 #define GST_CAT_DEFAULT v4l2src_debug
 
@@ -69,7 +71,7 @@ gst_v4l2src_buffer_pool_activate (GstV4l2BufferPool * pool, GstV4l2Src * v4l2src
 {
   GstV4l2Buffer *buf;
 
-  while ((buf = gst_v4l2_buffer_pool_get (pool)) != NULL)
+  while ((buf = gst_v4l2_buffer_pool_get (pool, FALSE)) != NULL)
     if (!gst_v4l2_buffer_pool_qbuf (pool, buf))
       goto queue_failed;
 
@@ -695,7 +697,7 @@ gst_v4l2src_grab_frame (GstV4l2Src * v4l2src, GstBuffer ** buf)
         goto select_error;
     }
 
-    pool_buffer = gst_v4l2_buffer_pool_dqbuf (pool);
+    pool_buffer = GST_BUFFER (gst_v4l2_buffer_pool_dqbuf (pool));
     if (pool_buffer)
       break;
 
@@ -956,7 +958,7 @@ gst_v4l2src_capture_init (GstV4l2Src * v4l2src, GstCaps * caps)
     /* Map the buffers */
     GST_LOG_OBJECT (v4l2src, "initiating buffer pool");
 
-    if (!(v4l2src->pool = gst_v4l2_buffer_pool_new (v4l2src, fd,
+    if (!(v4l2src->pool = gst_v4l2_buffer_pool_new (GST_ELEMENT (v4l2src), fd,
                 v4l2src->num_buffers, caps, TRUE, V4L2_BUF_TYPE_VIDEO_CAPTURE)))
       goto buffer_pool_new_failed;
 

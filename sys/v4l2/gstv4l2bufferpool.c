@@ -22,8 +22,20 @@
  * Boston, MA 02111-1307, USA.
  */
 
+#ifdef HAVE_CONFIG_H
+#  include <config.h>
+#endif
+
+#include <sys/mman.h>
+#include <string.h>
+#include <unistd.h>
+
 #include <gstv4l2bufferpool.h>
-#include <v4l2_calls.h>
+#include "gstv4l2src.h"
+#include "gstv4l2sink.h"
+#include "v4l2_calls.h"
+#include "gst/gst-i18n-plugin.h"
+
 
 GST_DEBUG_CATEGORY_EXTERN (v4l2buffer_debug);
 #define GST_CAT_DEFAULT v4l2buffer_debug
@@ -360,7 +372,7 @@ gst_v4l2_buffer_pool_destroy (GstV4l2BufferPool * pool)
 GstV4l2Buffer *
 gst_v4l2_buffer_pool_get (GstV4l2BufferPool *pool, gboolean blocking)
 {
-  int n;
+  GstV4l2Buffer *buf = NULL;
 
   GST_V4L2_BUFFER_POOL_LOCK (pool);
 
@@ -371,6 +383,8 @@ gst_v4l2_buffer_pool_get (GstV4l2BufferPool *pool, gboolean blocking)
   pool->running = TRUE;
 
   GST_V4L2_BUFFER_POOL_UNLOCK (pool);
+
+  return buf;
 }
 
 
@@ -402,7 +416,7 @@ GstV4l2Buffer *
 gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool *pool)
 {
   GstV4l2Object *v4l2object;
-  GstBuffer *pool_buffer;
+  GstV4l2Buffer *pool_buffer;
   struct v4l2_buffer buffer;
 
   if (GST_IS_V4L2SRC (pool->v4l2elem)) {
@@ -419,14 +433,14 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool *pool)
   buffer.memory = V4L2_MEMORY_MMAP;
 
 
-  if (v4l2_ioctl (pool->video_fd, VIDEOC_DQBUF, &buffer) >= 0) {
+  if (v4l2_ioctl (pool->video_fd, VIDIOC_DQBUF, &buffer) >= 0) {
 
     GST_V4L2_BUFFER_POOL_LOCK (pool);
 
     /* get our GstBuffer with that index from the pool, if the buffer was
      * outstanding we have a serious problem.
      */
-    pool_buffer = GST_BUFFER (pool->buffers[buffer.index]);
+    pool_buffer = pool->buffers[buffer.index];
 
     if (pool_buffer == NULL) {
       GST_ELEMENT_ERROR (pool->v4l2elem, RESOURCE, FAILED,

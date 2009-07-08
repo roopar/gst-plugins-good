@@ -25,6 +25,9 @@
 #ifndef __GSTV4L2BUFFER_H__
 #define __GSTV4L2BUFFER_H__
 
+#include <gst/gst.h>
+#include "v4l2_calls.h"
+
 GST_DEBUG_CATEGORY_EXTERN (v4l2buffer_debug);
 
 G_BEGIN_DECLS

@@ -12,7 +12,9 @@ plugin_LTLIBRARIES = libgstvideo4linux2.la
 libgstvideo4linux2_la_SOURCES = gstv4l2.c \
 				gstv4l2colorbalance.c \
 				gstv4l2object.c \
+				gstv4l2bufferpool.c \
 				gstv4l2src.c \
+				gstv4l2sink.c \
 				gstv4l2tuner.c \
 				gstv4l2vidorient.c \
 				v4l2_calls.c \

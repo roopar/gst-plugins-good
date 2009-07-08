@@ -51,6 +51,11 @@
 
 #include <gst/interfaces/propertyprobe.h>
 
+
+/* size of v4l2 buffer pool in streaming case */
+#define GST_V4L2_MAX_BUFFERS 16
+#define GST_V4L2_MIN_BUFFERS 1
+
 G_BEGIN_DECLS
 
 #define GST_V4L2_OBJECT(obj) (GstV4l2Object *)(obj)

@@ -34,31 +34,39 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2sink_debug);
 
 G_BEGIN_DECLS
 
-#define GST_TYPE_V4L2_SINK \
-  (gst_v4l2_sink_get_type())
-#define GST_V4L2_SINK(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_V4L2_SINK, GstV4l2Sink))
-#define GST_V4L2_SINK_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_V4L2_SINK, GstV4l2SinkClass))
-#define GST_IS_V4L2_SINK(obj) \
-  (G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_V4L2_SINK))
-#define GST_IS_V4L2_SINK_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_V4L2_SINK))
+#define GST_TYPE_V4L2SINK \
+  (gst_v4l2sink_get_type())
+#define GST_V4L2SINK(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj), GST_TYPE_V4L2SINK, GstV4l2Sink))
+#define GST_V4L2SINK_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass), GST_TYPE_V4L2SINK, GstV4l2SinkClass))
+#define GST_IS_V4L2SINK(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj), GST_TYPE_V4L2SINK))
+#define GST_IS_V4L2SINK_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass), GST_TYPE_V4L2SINK))
 
 typedef struct _GstV4l2Sink GstV4l2Sink;
 typedef struct _GstV4l2SinkClass GstV4l2SinkClass;
 
 
 struct _GstV4l2Sink {
-  /* Our element stuff */
   GstVideoSink videosink;
+
+  /*< private >*/
+  GstV4l2Object * v4l2object;
+  GstCaps *probed_caps;         /* (XXX do we need this?) */
+  GSList *formats;              /* list of available display formats (XXX do we need this?) */
+  GstV4l2BufferPool *pool;
+  guint32 num_buffers;
 };
 
 struct _GstV4l2SinkClass {
   GstVideoSinkClass parent_class;
+
+  GList *v4l2_class_devices;
 };
 
-GType gst_v4l2_sink_get_type(void);
+GType gst_v4l2sink_get_type(void);
 
 G_END_DECLS
 

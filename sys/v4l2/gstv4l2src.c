@@ -56,6 +56,8 @@
 #endif
 #include "gstv4l2vidorient.h"
 
+#include "gst/gst-i18n-plugin.h"
+
 static const GstElementDetails gst_v4l2src_details =
 GST_ELEMENT_DETAILS ("Video (video4linux2) Source",
     "Source/Video",
@@ -259,7 +261,8 @@ static void gst_v4l2src_set_property (GObject * object, guint prop_id,
 static void gst_v4l2src_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static GstCaps *gst_v4l2src_get_all_caps (void);
+// XXX moveme:
+GstCaps *gst_v4l2_object_get_all_caps (void);
 
 static void
 gst_v4l2src_base_init (gpointer g_class)
@@ -276,7 +279,7 @@ gst_v4l2src_base_init (gpointer g_class)
   gst_element_class_add_pad_template
       (gstelement_class,
       gst_pad_template_new ("src", GST_PAD_SRC, GST_PAD_ALWAYS,
-          gst_v4l2src_get_all_caps ()));
+          gst_v4l2_object_get_all_caps ()));
 }
 
 static void
@@ -579,7 +582,7 @@ no_nego_needed:
 
 
 static GstStructure *
-gst_v4l2src_v4l2fourcc_to_structure (guint32 fourcc)
+gst_v4l2_object_v4l2fourcc_to_structure (guint32 fourcc)
 {
   GstStructure *structure = NULL;
 
@@ -807,8 +810,9 @@ gst_v4l2src_get_format_from_fourcc (GstV4l2Src * v4l2src, guint32 fourcc)
   return NULL;
 }
 
-static GstCaps *
-gst_v4l2src_get_all_caps (void)
+// XXX moveme:
+GstCaps *
+gst_v4l2_object_get_all_caps (void)
 {
   static GstCaps *caps = NULL;
 
@@ -819,7 +823,7 @@ gst_v4l2src_get_all_caps (void)
 
     caps = gst_caps_new_empty ();
     for (i = 0; i < GST_V4L2_FORMAT_COUNT; i++) {
-      structure = gst_v4l2src_v4l2fourcc_to_structure (gst_v4l2_formats[i]);
+      structure = gst_v4l2_object_v4l2fourcc_to_structure (gst_v4l2_formats[i]);
       if (structure) {
         gst_structure_set (structure,
             "width", GST_TYPE_INT_RANGE, 1, GST_V4L2_MAX_SIZE,
@@ -862,7 +866,7 @@ gst_v4l2src_get_caps (GstBaseSrc * src)
 
     format = (struct v4l2_fmtdesc *) walk->data;
 
-    template = gst_v4l2src_v4l2fourcc_to_structure (format->pixelformat);
+    template = gst_v4l2_object_v4l2fourcc_to_structure (format->pixelformat);
 
     if (template) {
       GstCaps *tmp;

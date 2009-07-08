@@ -47,6 +47,8 @@
 
 #include "gstv4l2src.h"
 
+#include "gst/gst-i18n-plugin.h"
+
 /* Those are ioctl calls */
 #ifndef V4L2_CID_HCENTER
 #define V4L2_CID_HCENTER V4L2_CID_HCENTER_DEPRECATED
