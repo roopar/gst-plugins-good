@@ -170,9 +170,6 @@ static void gst_v4l2sink_set_property (GObject * object, guint prop_id,
 static void gst_v4l2sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-// XXX moveme:
-GstCaps *gst_v4l2_object_get_all_caps (void);
-
 static void
 gst_v4l2sink_base_init (gpointer g_class)
 {

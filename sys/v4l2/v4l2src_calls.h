@@ -41,8 +41,5 @@ GstFlowReturn gst_v4l2src_grab_frame     (GstV4l2Src * v4l2src, GstBuffer **buf)
 gboolean   gst_v4l2src_capture_stop      (GstV4l2Src * v4l2src);
 gboolean   gst_v4l2src_capture_deinit    (GstV4l2Src * v4l2src);
 
-// XXX moveme
-gboolean   gst_v4l2_object_fill_format_list  (GstV4l2Object *v4l2object); // XXX replace with _get_format_list()
-
 
 #endif /* __V4L2SRC_CALLS_H__ */

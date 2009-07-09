@@ -29,9 +29,6 @@
 
 GST_DEBUG_CATEGORY_EXTERN (v4l2src_debug);
 
-/* max frame width/height */
-#define GST_V4L2_MAX_SIZE (1<<15) /* 2^15 == 32768 */
-
 G_BEGIN_DECLS
 
 #define GST_TYPE_V4L2SRC \

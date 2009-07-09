@@ -56,6 +56,11 @@
 #define GST_V4L2_MAX_BUFFERS 16
 #define GST_V4L2_MIN_BUFFERS 1
 
+/* max frame width/height */
+#define GST_V4L2_MAX_SIZE (1<<15) /* 2^15 == 32768 */
+
+
+
 G_BEGIN_DECLS
 
 #define GST_V4L2_OBJECT(obj) (GstV4l2Object *)(obj)
@@ -158,8 +163,21 @@ GValueArray* gst_v4l2_probe_get_values      (GstPropertyProbe * probe, guint pro
                                              const GParamSpec * pspec,
                                              GList ** klass_devices);
 
-GstCaps*     gst_v4l2_object_probe_caps_for_format (GstV4l2Object *v4l2object, guint32 pixelformat,
+GstCaps*      gst_v4l2_object_probe_caps_for_format (GstV4l2Object *v4l2object, guint32 pixelformat,
                                              const GstStructure * template);
+
+gboolean      gst_v4l2_object_get_caps_info (GstV4l2Object *v4l2object, GstCaps *caps,
+                                             struct v4l2_fmtdesc **format, gint *w, gint *h,
+                                             guint *fps_n, guint *fps_d, guint *size);
+
+
+// XXX replace with _get_format_list():
+gboolean gst_v4l2_object_fill_format_list  (GstV4l2Object *v4l2object);
+
+GstCaps*      gst_v4l2_object_get_all_caps (void);
+
+GstStructure* gst_v4l2_object_v4l2fourcc_to_structure (guint32 fourcc);
+
 
 
 #define GST_IMPLEMENT_V4L2_PROBE_METHODS(Type_Class, interface_as_function)                 \
