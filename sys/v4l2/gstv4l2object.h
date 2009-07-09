@@ -91,6 +91,8 @@ struct _GstV4l2Object {
   struct v4l2_input vinput;
 
   /* lists... */
+  GSList *formats;              /* list of available capture formats */
+
   GList *colors;
   GList *norms;
   GList *channels;
@@ -155,6 +157,10 @@ gboolean     gst_v4l2_probe_needs_probe     (GstPropertyProbe * probe, guint pro
 GValueArray* gst_v4l2_probe_get_values      (GstPropertyProbe * probe, guint prop_id,
                                              const GParamSpec * pspec,
                                              GList ** klass_devices);
+
+GstCaps*     gst_v4l2_object_probe_caps_for_format (GstV4l2Object *v4l2object, guint32 pixelformat,
+                                             const GstStructure * template);
+
 
 #define GST_IMPLEMENT_V4L2_PROBE_METHODS(Type_Class, interface_as_function)                 \
                                                                                             \

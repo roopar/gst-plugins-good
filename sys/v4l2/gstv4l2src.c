@@ -338,8 +338,6 @@ gst_v4l2src_init (GstV4l2Src * v4l2src, GstV4l2SrcClass * klass)
 
   v4l2src->always_copy = PROP_DEF_ALWAYS_COPY;
 
-  v4l2src->formats = NULL;
-
   v4l2src->is_capturing = FALSE;
 
   gst_base_src_set_format (GST_BASE_SRC (v4l2src), GST_FORMAT_TIME);
@@ -354,10 +352,6 @@ static void
 gst_v4l2src_dispose (GObject * object)
 {
   GstV4l2Src *v4l2src = GST_V4L2SRC (object);
-
-  if (v4l2src->formats) {
-    gst_v4l2src_clear_format_list (v4l2src);
-  }
 
   if (v4l2src->probed_caps) {
     gst_caps_unref (v4l2src->probed_caps);
@@ -784,8 +778,9 @@ gst_v4l2_object_v4l2fourcc_to_structure (guint32 fourcc)
   return structure;
 }
 
+// XXX moveme
 static struct v4l2_fmtdesc *
-gst_v4l2src_get_format_from_fourcc (GstV4l2Src * v4l2src, guint32 fourcc)
+gst_v4l2_object_get_format_from_fourcc (GstV4l2Object * v4l2object, guint32 fourcc)
 {
   struct v4l2_fmtdesc *fmt;
   GSList *walk;
@@ -793,7 +788,7 @@ gst_v4l2src_get_format_from_fourcc (GstV4l2Src * v4l2src, guint32 fourcc)
   if (fourcc == 0)
     return NULL;
 
-  walk = v4l2src->formats;
+  walk = v4l2object->formats;
   while (walk) {
     fmt = (struct v4l2_fmtdesc *) walk->data;
     if (fmt->pixelformat == fourcc)
@@ -854,12 +849,13 @@ gst_v4l2src_get_caps (GstBaseSrc * src)
   if (v4l2src->probed_caps)
     return gst_caps_ref (v4l2src->probed_caps);
 
-  if (!v4l2src->formats)
-    gst_v4l2src_fill_format_list (v4l2src);
+  // XXX _get_format_list()..
+  if (!v4l2src->v4l2object->formats)
+    gst_v4l2_object_fill_format_list (v4l2src->v4l2object);
 
   ret = gst_caps_new_empty ();
 
-  for (walk = v4l2src->formats; walk; walk = walk->next) {
+  for (walk = v4l2src->v4l2object->formats; walk; walk = walk->next) {
     struct v4l2_fmtdesc *format;
 
     GstStructure *template;
@@ -871,7 +867,7 @@ gst_v4l2src_get_caps (GstBaseSrc * src)
     if (template) {
       GstCaps *tmp;
 
-      tmp = gst_v4l2src_probe_caps_for_format (v4l2src, format->pixelformat,
+      tmp = gst_v4l2_object_probe_caps_for_format (v4l2src->v4l2object, format->pixelformat,
           template);
       if (tmp)
         gst_caps_append (ret, tmp);
@@ -1035,7 +1031,7 @@ gst_v4l2_get_caps_info (GstV4l2Src * v4l2src, GstCaps * caps,
   if (fourcc == 0)
     return FALSE;
 
-  *format = gst_v4l2src_get_format_from_fourcc (v4l2src, fourcc);
+  *format = gst_v4l2_object_get_format_from_fourcc (v4l2src->v4l2object, fourcc);
   *size = outsize;
 
   return TRUE;

@@ -55,7 +55,6 @@ struct _GstV4l2Sink {
   /*< private >*/
   GstV4l2Object * v4l2object;
   GstCaps *probed_caps;         /* (XXX do we need this?) */
-  GSList *formats;              /* list of available display formats (XXX do we need this?) */
   GstV4l2BufferPool *pool;
   guint32 num_buffers;
 };

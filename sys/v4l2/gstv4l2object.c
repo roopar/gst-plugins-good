@@ -264,6 +264,8 @@ gst_v4l2_object_new (GstElement * element,
    */
   v4l2object = g_new0 (GstV4l2Object, 1);
 
+  v4l2object->formats = NULL;
+
   v4l2object->element = element;
   v4l2object->get_in_out_func = get_in_out_func;
   v4l2object->set_in_out_func = set_in_out_func;
@@ -283,6 +285,9 @@ gst_v4l2_object_new (GstElement * element,
   return v4l2object;
 }
 
+static gboolean gst_v4l2_object_clear_format_list (GstV4l2Object *v4l2object);
+
+
 void
 gst_v4l2_object_destroy (GstV4l2Object * v4l2object)
 {
@@ -300,8 +305,24 @@ gst_v4l2_object_destroy (GstV4l2Object * v4l2object)
   if (v4l2object->norm)
     g_free (v4l2object->norm);
 
+  if (v4l2object->formats) {
+    gst_v4l2_object_clear_format_list (v4l2object);
+  }
+
   g_free (v4l2object);
 }
+
+
+static gboolean
+gst_v4l2_object_clear_format_list (GstV4l2Object *v4l2object)
+{
+  g_slist_foreach (v4l2object->formats, (GFunc) g_free, NULL);
+  g_slist_free (v4l2object->formats);
+  v4l2object->formats = NULL;
+
+  return TRUE;
+}
+
 
 gboolean
 gst_v4l2_object_set_property_helper (GstV4l2Object * v4l2object,

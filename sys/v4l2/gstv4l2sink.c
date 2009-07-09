@@ -173,10 +173,6 @@ static void gst_v4l2sink_get_property (GObject * object, guint prop_id,
 // XXX moveme:
 GstCaps *gst_v4l2_object_get_all_caps (void);
 
-// XXX probably move into v4l2object:
-gboolean gst_v4l2sink_clear_format_list (GstV4l2Sink * v4l2sink) { return TRUE; }
-
-
 static void
 gst_v4l2sink_base_init (gpointer g_class)
 {
@@ -228,8 +224,6 @@ gst_v4l2sink_init (GstV4l2Sink * v4l2sink, GstV4l2SinkClass * klass)
 
   /* number of buffers requested */
   v4l2sink->num_buffers = PROP_DEF_QUEUE_SIZE;
-
-  v4l2sink->formats = NULL;
 }
 
 
@@ -237,10 +231,6 @@ static void
 gst_v4l2sink_dispose (GObject * object)
 {
   GstV4l2Sink *v4l2sink = GST_V4L2SINK (object);
-
-  if (v4l2sink->formats) {
-    gst_v4l2sink_clear_format_list (v4l2sink);
-  }
 
   if (v4l2sink->probed_caps) {
     gst_caps_unref (v4l2sink->probed_caps);

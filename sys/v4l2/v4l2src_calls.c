@@ -25,6 +25,10 @@
 #include "config.h"
 #endif
 
+// XXX removeme:
+#define VIDIOC_ENUM_FRAMESIZES
+#define VIDIOC_ENUM_FRAMEINTERVALS
+
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -61,10 +65,6 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2src_debug);
 
 
 /* Local functions */
-static gboolean
-gst_v4l2src_get_nearest_size (GstV4l2Src * v4l2src, guint32 pixelformat,
-    gint * width, gint * height);
-
 
 static gboolean
 gst_v4l2src_buffer_pool_activate (GstV4l2BufferPool * pool, GstV4l2Src * v4l2src)
@@ -199,17 +199,19 @@ gst_v4l2src_format_cmp_func (gconstpointer a, gconstpointer b)
 }
 
 /******************************************************
- * gst_v4l2src_fill_format_list():
+ * gst_v4l2_object_fill_format_list():
  *   create list of supported capture formats
  * return value: TRUE on success, FALSE on error
  ******************************************************/
+// XXX moveme
+// XXX make private, and replace with _get_format_list()..
 gboolean
-gst_v4l2src_fill_format_list (GstV4l2Src * v4l2src)
+gst_v4l2_object_fill_format_list (GstV4l2Object* v4l2object)
 {
   gint n;
   struct v4l2_fmtdesc *format;
 
-  GST_DEBUG_OBJECT (v4l2src, "getting src format enumerations");
+  GST_DEBUG_OBJECT (v4l2object->element, "getting src format enumerations");
 
   /* format enumeration */
   for (n = 0;; n++) {
@@ -218,7 +220,7 @@ gst_v4l2src_fill_format_list (GstV4l2Src * v4l2src)
     format->index = n;
     format->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-    if (v4l2_ioctl (v4l2src->v4l2object->video_fd, VIDIOC_ENUM_FMT, format) < 0) {
+    if (v4l2_ioctl (v4l2object->video_fd, VIDIOC_ENUM_FMT, format) < 0) {
       if (errno == EINVAL) {
         g_free (format);
         break;                  /* end of enumeration */
@@ -227,57 +229,43 @@ gst_v4l2src_fill_format_list (GstV4l2Src * v4l2src)
       }
     }
 
-    GST_LOG_OBJECT (v4l2src, "index:       %u", format->index);
-    GST_LOG_OBJECT (v4l2src, "type:        %d", format->type);
-    GST_LOG_OBJECT (v4l2src, "flags:       %08x", format->flags);
-    GST_LOG_OBJECT (v4l2src, "description: '%s'", format->description);
-    GST_LOG_OBJECT (v4l2src, "pixelformat: %" GST_FOURCC_FORMAT,
+    GST_LOG_OBJECT (v4l2object->element, "index:       %u", format->index);
+    GST_LOG_OBJECT (v4l2object->element, "type:        %d", format->type);
+    GST_LOG_OBJECT (v4l2object->element, "flags:       %08x", format->flags);
+    GST_LOG_OBJECT (v4l2object->element, "description: '%s'", format->description);
+    GST_LOG_OBJECT (v4l2object->element, "pixelformat: %" GST_FOURCC_FORMAT,
         GST_FOURCC_ARGS (format->pixelformat));
 
     /* sort formats according to our preference;  we do this, because caps
      * are probed in the order the formats are in the list, and the order of
      * formats in the final probed caps matters for things like fixation */
-    v4l2src->formats = g_slist_insert_sorted (v4l2src->formats, format,
+    v4l2object->formats = g_slist_insert_sorted (v4l2object->formats, format,
         (GCompareFunc) gst_v4l2src_format_cmp_func);
   }
 
-  GST_DEBUG_OBJECT (v4l2src, "got %d format(s)", n);
+  GST_DEBUG_OBJECT (v4l2object->element, "got %d format(s)", n);
 
   return TRUE;
 
   /* ERRORS */
 failed:
   {
-    GST_ELEMENT_ERROR (v4l2src, RESOURCE, SETTINGS,
-        (_("Failed to enumerate possible video formats device '%s' can work with"), v4l2src->v4l2object->videodev), ("Failed to get number %d in pixelformat enumeration for %s. (%d - %s)", n, v4l2src->v4l2object->videodev, errno, g_strerror (errno)));
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Failed to enumerate possible video formats device '%s' can work with"), v4l2object->videodev), ("Failed to get number %d in pixelformat enumeration for %s. (%d - %s)", n, v4l2object->videodev, errno, g_strerror (errno)));
     g_free (format);
     return FALSE;
   }
 }
 
-/******************************************************
- * gst_v4l2src_clear_format_list():
- *   free list of supported capture formats
- * return value: TRUE on success, FALSE on error
- ******************************************************/
-gboolean
-gst_v4l2src_clear_format_list (GstV4l2Src * v4l2src)
-{
-  g_slist_foreach (v4l2src->formats, (GFunc) g_free, NULL);
-  g_slist_free (v4l2src->formats);
-  v4l2src->formats = NULL;
-
-  return TRUE;
-}
-
 /* The frame interval enumeration code first appeared in Linux 2.6.19. */
 #ifdef VIDIOC_ENUM_FRAMEINTERVALS
+// XXX moveme...
 static GstStructure *
-gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
+gst_v4l2_object_probe_caps_for_format_and_size (GstV4l2Object *v4l2object,
     guint32 pixelformat,
     guint32 width, guint32 height, const GstStructure * template)
 {
-  gint fd = v4l2src->v4l2object->video_fd;
+  gint fd = v4l2object->video_fd;
   struct v4l2_frmivalenum ival;
   guint32 num, denom;
   GstStructure *s;
@@ -289,7 +277,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
   ival.width = width;
   ival.height = height;
 
-  GST_LOG_OBJECT (v4l2src, "get frame interval for %ux%u, %" GST_FOURCC_FORMAT,
+  GST_LOG_OBJECT (v4l2object->element, "get frame interval for %ux%u, %" GST_FOURCC_FORMAT,
       width, height, GST_FOURCC_ARGS (pixelformat));
 
   /* keep in mind that v4l2 gives us frame intervals (durations); we invert the
@@ -313,7 +301,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
         denom >>= 1;
       }
 
-      GST_LOG_OBJECT (v4l2src, "adding discrete framerate: %d/%d", denom, num);
+      GST_LOG_OBJECT (v4l2object->element, "adding discrete framerate: %d/%d", denom, num);
 
       /* swap to get the framerate */
       gst_value_set_fraction (&rate, denom, num);
@@ -342,7 +330,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
       minnum >>= 1;
       mindenom >>= 1;
     }
-    GST_LOG_OBJECT (v4l2src, "stepwise min frame interval: %d/%d", minnum,
+    GST_LOG_OBJECT (v4l2object->element, "stepwise min frame interval: %d/%d", minnum,
         mindenom);
     gst_value_set_fraction (&min, minnum, mindenom);
 
@@ -354,7 +342,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
       maxdenom >>= 1;
     }
 
-    GST_LOG_OBJECT (v4l2src, "stepwise max frame interval: %d/%d", maxnum,
+    GST_LOG_OBJECT (v4l2object->element, "stepwise max frame interval: %d/%d", maxnum,
         maxdenom);
     gst_value_set_fraction (&max, maxnum, maxdenom);
 
@@ -375,7 +363,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
 
     /* since we only have gst_value_fraction_subtract and not add, negate the
      * numerator */
-    GST_LOG_OBJECT (v4l2src, "stepwise step frame interval: %d/%d", num, denom);
+    GST_LOG_OBJECT (v4l2object->element, "stepwise step frame interval: %d/%d", num, denom);
     gst_value_set_fraction (&step, -num, denom);
 
     while (gst_value_compare (&min, &max) <= 0) {
@@ -383,7 +371,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
 
       num = gst_value_get_fraction_numerator (&min);
       denom = gst_value_get_fraction_denominator (&min);
-      GST_LOG_OBJECT (v4l2src, "adding stepwise framerate: %d/%d", denom, num);
+      GST_LOG_OBJECT (v4l2object->element, "adding stepwise framerate: %d/%d", denom, num);
 
       /* invert to get the framerate */
       g_value_init (&rate, GST_TYPE_FRACTION);
@@ -394,13 +382,13 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
       /* we're actually adding because step was negated above. This is because
        * there is no _add function... */
       if (!gst_value_fraction_subtract (&min, &min, &step)) {
-        GST_WARNING_OBJECT (v4l2src, "could not step fraction!");
+        GST_WARNING_OBJECT (v4l2object->element, "could not step fraction!");
         break;
       }
     }
     if (!added) {
       /* no range was added, leave the default range from the template */
-      GST_WARNING_OBJECT (v4l2src, "no range added, leaving default");
+      GST_WARNING_OBJECT (v4l2object->element, "no range added, leaving default");
       g_value_unset (&rates);
     }
   } else if (ival.type == V4L2_FRMIVAL_TYPE_CONTINUOUS) {
@@ -422,7 +410,7 @@ gst_v4l2src_probe_caps_for_format_and_size (GstV4l2Src * v4l2src,
       maxdenom >>= 1;
     }
 
-    GST_LOG_OBJECT (v4l2src, "continuous frame interval %d/%d to %d/%d",
+    GST_LOG_OBJECT (v4l2object->element, "continuous frame interval %d/%d to %d/%d",
         maxdenom, maxnum, denom, num);
 
     gst_value_set_fraction_range_full (&rates, maxdenom, maxnum, denom, num);
@@ -449,7 +437,7 @@ return_data:
   /* ERRORS */
 enum_frameintervals_failed:
   {
-    GST_DEBUG_OBJECT (v4l2src,
+    GST_DEBUG_OBJECT (v4l2object->element,
         "Unable to enumerate intervals for %" GST_FOURCC_FORMAT "@%ux%u",
         GST_FOURCC_ARGS (pixelformat), width, height);
     goto return_data;
@@ -457,7 +445,7 @@ enum_frameintervals_failed:
 unknown_type:
   {
     /* I don't see how this is actually an error, we ignore the format then */
-    GST_WARNING_OBJECT (v4l2src,
+    GST_WARNING_OBJECT (v4l2object->element,
         "Unknown frame interval type at %" GST_FOURCC_FORMAT "@%ux%u: %u",
         GST_FOURCC_ARGS (pixelformat), width, height, ival.type);
     return NULL;
@@ -481,15 +469,21 @@ sort_by_frame_size (GstStructure * s1, GstStructure * s2)
 }
 #endif
 
+// XXX moveme
+static gboolean
+gst_v4l2_object_get_nearest_size (GstV4l2Object* v4l2object, guint32 pixelformat,
+    gint * width, gint * height);
+
+// XXX moveme
 GstCaps *
-gst_v4l2src_probe_caps_for_format (GstV4l2Src * v4l2src, guint32 pixelformat,
+gst_v4l2_object_probe_caps_for_format (GstV4l2Object *v4l2object, guint32 pixelformat,
     const GstStructure * template)
 {
   GstCaps *ret = gst_caps_new_empty ();
   GstStructure *tmp;
 
 #ifdef VIDIOC_ENUM_FRAMESIZES
-  gint fd = v4l2src->v4l2object->video_fd;
+  gint fd = v4l2object->video_fd;
   struct v4l2_frmsizeenum size;
   GList *results = NULL;
   guint32 w, h;
@@ -498,21 +492,21 @@ gst_v4l2src_probe_caps_for_format (GstV4l2Src * v4l2src, guint32 pixelformat,
   size.index = 0;
   size.pixel_format = pixelformat;
 
-  GST_DEBUG_OBJECT (v4l2src, "Enumerating frame sizes");
+  GST_DEBUG_OBJECT (v4l2object->element, "Enumerating frame sizes");
 
   if (v4l2_ioctl (fd, VIDIOC_ENUM_FRAMESIZES, &size) < 0)
     goto enum_framesizes_failed;
 
   if (size.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
     do {
-      GST_LOG_OBJECT (v4l2src, "got discrete frame size %dx%d",
+      GST_LOG_OBJECT (v4l2object->element, "got discrete frame size %dx%d",
           size.discrete.width, size.discrete.height);
 
       w = MIN (size.discrete.width, G_MAXINT);
       h = MIN (size.discrete.height, G_MAXINT);
 
       if (w && h) {
-        tmp = gst_v4l2src_probe_caps_for_format_and_size (v4l2src, pixelformat,
+        tmp = gst_v4l2_object_probe_caps_for_format_and_size (v4l2object, pixelformat,
             w, h, template);
 
         if (tmp)
@@ -521,15 +515,15 @@ gst_v4l2src_probe_caps_for_format (GstV4l2Src * v4l2src, guint32 pixelformat,
 
       size.index++;
     } while (v4l2_ioctl (fd, VIDIOC_ENUM_FRAMESIZES, &size) >= 0);
-    GST_DEBUG_OBJECT (v4l2src, "done iterating discrete frame sizes");
+    GST_DEBUG_OBJECT (v4l2object->element, "done iterating discrete frame sizes");
   } else if (size.type == V4L2_FRMSIZE_TYPE_STEPWISE) {
-    GST_DEBUG_OBJECT (v4l2src, "we have stepwise frame sizes:");
-    GST_DEBUG_OBJECT (v4l2src, "min width:   %d", size.stepwise.min_width);
-    GST_DEBUG_OBJECT (v4l2src, "min height:  %d", size.stepwise.min_height);
-    GST_DEBUG_OBJECT (v4l2src, "max width:   %d", size.stepwise.max_width);
-    GST_DEBUG_OBJECT (v4l2src, "min height:  %d", size.stepwise.max_height);
-    GST_DEBUG_OBJECT (v4l2src, "step width:  %d", size.stepwise.step_width);
-    GST_DEBUG_OBJECT (v4l2src, "step height: %d", size.stepwise.step_height);
+    GST_DEBUG_OBJECT (v4l2object->element, "we have stepwise frame sizes:");
+    GST_DEBUG_OBJECT (v4l2object->element, "min width:   %d", size.stepwise.min_width);
+    GST_DEBUG_OBJECT (v4l2object->element, "min height:  %d", size.stepwise.min_height);
+    GST_DEBUG_OBJECT (v4l2object->element, "max width:   %d", size.stepwise.max_width);
+    GST_DEBUG_OBJECT (v4l2object->element, "min height:  %d", size.stepwise.max_height);
+    GST_DEBUG_OBJECT (v4l2object->element, "step width:  %d", size.stepwise.step_width);
+    GST_DEBUG_OBJECT (v4l2object->element, "step height: %d", size.stepwise.step_height);
 
     for (w = size.stepwise.min_width, h = size.stepwise.min_height;
         w < size.stepwise.max_width && h < size.stepwise.max_height;
@@ -537,28 +531,28 @@ gst_v4l2src_probe_caps_for_format (GstV4l2Src * v4l2src, guint32 pixelformat,
       if (w == 0 || h == 0)
         continue;
 
-      tmp = gst_v4l2src_probe_caps_for_format_and_size (v4l2src, pixelformat,
+      tmp = gst_v4l2_object_probe_caps_for_format_and_size (v4l2object, pixelformat,
           w, h, template);
 
       if (tmp)
         results = g_list_prepend (results, tmp);
     }
-    GST_DEBUG_OBJECT (v4l2src, "done iterating stepwise frame sizes");
+    GST_DEBUG_OBJECT (v4l2object->element, "done iterating stepwise frame sizes");
   } else if (size.type == V4L2_FRMSIZE_TYPE_CONTINUOUS) {
     guint32 maxw, maxh;
 
-    GST_DEBUG_OBJECT (v4l2src, "we have continuous frame sizes:");
-    GST_DEBUG_OBJECT (v4l2src, "min width:   %d", size.stepwise.min_width);
-    GST_DEBUG_OBJECT (v4l2src, "min height:  %d", size.stepwise.min_height);
-    GST_DEBUG_OBJECT (v4l2src, "max width:   %d", size.stepwise.max_width);
-    GST_DEBUG_OBJECT (v4l2src, "min height:  %d", size.stepwise.max_height);
+    GST_DEBUG_OBJECT (v4l2object->element, "we have continuous frame sizes:");
+    GST_DEBUG_OBJECT (v4l2object->element, "min width:   %d", size.stepwise.min_width);
+    GST_DEBUG_OBJECT (v4l2object->element, "min height:  %d", size.stepwise.min_height);
+    GST_DEBUG_OBJECT (v4l2object->element, "max width:   %d", size.stepwise.max_width);
+    GST_DEBUG_OBJECT (v4l2object->element, "min height:  %d", size.stepwise.max_height);
 
     w = MAX (size.stepwise.min_width, 1);
     h = MAX (size.stepwise.min_height, 1);
     maxw = MIN (size.stepwise.max_width, G_MAXINT);
     maxh = MIN (size.stepwise.max_height, G_MAXINT);
 
-    tmp = gst_v4l2src_probe_caps_for_format_and_size (v4l2src, pixelformat,
+    tmp = gst_v4l2_object_probe_caps_for_format_and_size (v4l2object, pixelformat,
         w, h, template);
     if (tmp) {
       gst_structure_set (tmp, "width", GST_TYPE_INT_RANGE, (gint) w,
@@ -592,7 +586,7 @@ gst_v4l2src_probe_caps_for_format (GstV4l2Src * v4l2src, guint32 pixelformat,
 enum_framesizes_failed:
   {
     /* I don't see how this is actually an error */
-    GST_DEBUG_OBJECT (v4l2src,
+    GST_DEBUG_OBJECT (v4l2object->element,
         "Failed to enumerate frame sizes for pixelformat %" GST_FOURCC_FORMAT
         " (%s)", GST_FOURCC_ARGS (pixelformat), g_strerror (errno));
     goto default_frame_sizes;
@@ -601,14 +595,14 @@ enum_framesizes_no_results:
   {
     /* it's possible that VIDIOC_ENUM_FRAMESIZES is defined but the driver in
      * question doesn't actually support it yet */
-    GST_DEBUG_OBJECT (v4l2src, "No results for pixelformat %" GST_FOURCC_FORMAT
+    GST_DEBUG_OBJECT (v4l2object->element, "No results for pixelformat %" GST_FOURCC_FORMAT
         " enumerating frame sizes, trying fallback",
         GST_FOURCC_ARGS (pixelformat));
     goto default_frame_sizes;
   }
 unknown_type:
   {
-    GST_WARNING_OBJECT (v4l2src,
+    GST_WARNING_OBJECT (v4l2object->element,
         "Unknown frame sizeenum type for pixelformat %" GST_FOURCC_FORMAT
         ": %u", GST_FOURCC_ARGS (pixelformat), size.type);
     goto default_frame_sizes;
@@ -621,26 +615,26 @@ default_frame_sizes:
     /* This code is for Linux < 2.6.19 */
     min_w = min_h = 1;
     max_w = max_h = GST_V4L2_MAX_SIZE;
-    if (!gst_v4l2src_get_nearest_size (v4l2src, pixelformat, &min_w, &min_h)) {
-      GST_WARNING_OBJECT (v4l2src,
+    if (!gst_v4l2_object_get_nearest_size (v4l2object, pixelformat, &min_w, &min_h)) {
+      GST_WARNING_OBJECT (v4l2object->element,
           "Could not probe minimum capture size for pixelformat %"
           GST_FOURCC_FORMAT, GST_FOURCC_ARGS (pixelformat));
     }
-    if (!gst_v4l2src_get_nearest_size (v4l2src, pixelformat, &max_w, &max_h)) {
-      GST_WARNING_OBJECT (v4l2src,
+    if (!gst_v4l2_object_get_nearest_size (v4l2object, pixelformat, &max_w, &max_h)) {
+      GST_WARNING_OBJECT (v4l2object->element,
           "Could not probe maximum capture size for pixelformat %"
           GST_FOURCC_FORMAT, GST_FOURCC_ARGS (pixelformat));
     }
 
     /* Since we can't get framerate directly, try to use the current norm */
-    if (v4l2src->v4l2object->norm && v4l2src->v4l2object->norms) {
+    if (v4l2object->norm && v4l2object->norms) {
       GList *norms;
       GstTunerNorm *norm;
 
-      for (norms = v4l2src->v4l2object->norms; norms != NULL;
+      for (norms = v4l2object->norms; norms != NULL;
           norms = norms->next) {
         norm = (GstTunerNorm *) norms->data;
-        if (!strcmp (norm->label, v4l2src->v4l2object->norm))
+        if (!strcmp (norm->label, v4l2object->norm))
           break;
       }
       /* If it's possible, set framerate to that (discrete) value */
@@ -1128,10 +1122,10 @@ gst_v4l2src_capture_deinit (GstV4l2Src * v4l2src)
   return TRUE;
 }
 
-/*
- */
+
+// XXX moveme...
 static gboolean
-gst_v4l2src_get_nearest_size (GstV4l2Src * v4l2src, guint32 pixelformat,
+gst_v4l2_object_get_nearest_size (GstV4l2Object* v4l2object, guint32 pixelformat,
     gint * width, gint * height)
 {
   struct v4l2_format fmt;
@@ -1141,11 +1135,11 @@ gst_v4l2src_get_nearest_size (GstV4l2Src * v4l2src, guint32 pixelformat,
   g_return_val_if_fail (width != NULL, FALSE);
   g_return_val_if_fail (height != NULL, FALSE);
 
-  GST_LOG_OBJECT (v4l2src,
+  GST_LOG_OBJECT (v4l2object->element,
       "getting nearest size to %dx%d with format %" GST_FOURCC_FORMAT,
       *width, *height, GST_FOURCC_ARGS (pixelformat));
 
-  fd = v4l2src->v4l2object->video_fd;
+  fd = v4l2object->video_fd;
 
   /* get size delimiters */
   memset (&fmt, 0, sizeof (fmt));
@@ -1173,10 +1167,10 @@ gst_v4l2src_get_nearest_size (GstV4l2Src * v4l2src, guint32 pixelformat,
 
     /* Only try S_FMT if we're not actively capturing yet, which we shouldn't
        be, because we're still probing */
-    if (GST_V4L2_IS_ACTIVE (v4l2src->v4l2object))
+    if (GST_V4L2_IS_ACTIVE (v4l2object))
       return FALSE;
 
-    GST_LOG_OBJECT (v4l2src,
+    GST_LOG_OBJECT (v4l2object->element,
         "Failed to probe size limit with VIDIOC_TRY_FMT, trying VIDIOC_S_FMT");
 
     fmt.fmt.pix.width = *width;
@@ -1196,7 +1190,7 @@ gst_v4l2src_get_nearest_size (GstV4l2Src * v4l2src, guint32 pixelformat,
       return FALSE;
   }
 
-  GST_LOG_OBJECT (v4l2src,
+  GST_LOG_OBJECT (v4l2object->element,
       "got nearest size %dx%d", fmt.fmt.pix.width, fmt.fmt.pix.height);
 
   *width = fmt.fmt.pix.width;

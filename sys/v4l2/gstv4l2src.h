@@ -66,9 +66,6 @@ struct _GstV4l2Src
   /* pads */
   GstCaps *probed_caps;
 
-  /* internal lists */
-  GSList *formats;              /* list of available capture formats */
-
   /* buffer handling */
   GstV4l2BufferPool *pool;
 
