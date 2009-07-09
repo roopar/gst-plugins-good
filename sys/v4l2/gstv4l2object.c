@@ -256,6 +256,7 @@ gst_v4l2_object_install_properties_helper (GObjectClass * gobject_class)
 
 GstV4l2Object *
 gst_v4l2_object_new (GstElement * element,
+    enum v4l2_buf_type  type,
     GstV4l2GetInOutFunction get_in_out_func,
     GstV4l2SetInOutFunction set_in_out_func,
     GstV4l2UpdateFpsFunction update_fps_func)
@@ -267,6 +268,7 @@ gst_v4l2_object_new (GstElement * element,
    */
   v4l2object = g_new0 (GstV4l2Object, 1);
 
+  v4l2object->type = type;
   v4l2object->formats = NULL;
 
   v4l2object->element = element;
@@ -736,8 +738,7 @@ format_cmp_func (gconstpointer a, gconstpointer b)
  *   create list of supported capture formats
  * return value: TRUE on success, FALSE on error
  ******************************************************/
-// XXX make private, and replace with _get_format_list()..
-gboolean
+static gboolean
 gst_v4l2_object_fill_format_list (GstV4l2Object* v4l2object)
 {
   gint n;
@@ -750,7 +751,7 @@ gst_v4l2_object_fill_format_list (GstV4l2Object* v4l2object)
     format = g_new0 (struct v4l2_fmtdesc, 1);
 
     format->index = n;
-    format->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    format->type = v4l2object->type;
 
     if (v4l2_ioctl (v4l2object->video_fd, VIDIOC_ENUM_FMT, format) < 0) {
       if (errno == EINVAL) {
@@ -787,6 +788,18 @@ failed:
     g_free (format);
     return FALSE;
   }
+}
+
+/**
+ * Get the list of supported capture formats, a list of
+ * <code>struct v4l2_fmtdesc</code>.
+ */
+GSList*
+gst_v4l2_object_get_format_list  (GstV4l2Object *v4l2object)
+{
+  if (!v4l2object->formats)
+    gst_v4l2_object_fill_format_list (v4l2object);
+  return v4l2object->formats;
 }
 
 
@@ -1598,7 +1611,7 @@ gst_v4l2_object_get_nearest_size (GstV4l2Object* v4l2object, guint32 pixelformat
 
   /* get size delimiters */
   memset (&fmt, 0, sizeof (fmt));
-  fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  fmt.type = v4l2object->type;
   fmt.fmt.pix.width = *width;
   fmt.fmt.pix.height = *height;
   fmt.fmt.pix.pixelformat = pixelformat;

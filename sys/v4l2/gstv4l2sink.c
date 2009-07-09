@@ -217,6 +217,7 @@ static void
 gst_v4l2sink_init (GstV4l2Sink * v4l2sink, GstV4l2SinkClass * klass)
 {
   v4l2sink->v4l2object = gst_v4l2_object_new (GST_ELEMENT (v4l2sink),
+      V4L2_BUF_TYPE_VIDEO_OUTPUT,
       gst_v4l2_get_input, gst_v4l2_set_input, NULL);
 
   /* number of buffers requested */

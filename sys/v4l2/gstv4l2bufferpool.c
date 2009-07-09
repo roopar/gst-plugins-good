@@ -69,19 +69,28 @@ gst_v4l2_buffer_finalize (GstV4l2Buffer * buffer)
       if (!gst_v4l2_buffer_pool_qbuf (pool, buffer)) {
         GST_WARNING ("could not requeue buffer %p %d", buffer, index);
       } else {
-        /* FIXME: check that the caps didn't change */
-        GST_LOG_OBJECT (pool->v4l2elem, "reviving buffer %p, %d", buffer, index);
-        gst_buffer_ref (GST_BUFFER (buffer));
-        GST_BUFFER_SIZE (buffer) = 0;
-        pool->buffers[index] = buffer;
         resuscitated = TRUE;
       }
     } else {
-// FIXME return to pool of avail buffers!!!
+      resuscitated = TRUE;
+      /* XXX double check this... I think it is ok to not synchronize this
+       * w.r.t. destruction of the pool, since the buffer is still live and
+       * the buffer holds a ref to the pool..
+       */
+      g_async_queue_push (pool->avail_buffers, buffer);
     }
   } else {
     GST_LOG_OBJECT (pool->v4l2elem, "the pool is shutting down");
   }
+
+  if (resuscitated) {
+    /* FIXME: check that the caps didn't change */
+    GST_LOG_OBJECT (pool->v4l2elem, "reviving buffer %p, %d", buffer, index);
+    gst_buffer_ref (GST_BUFFER (buffer));
+    GST_BUFFER_SIZE (buffer) = 0;
+    pool->buffers[index] = buffer;
+  }
+
   GST_V4L2_BUFFER_POOL_UNLOCK (pool);
 
   if (!resuscitated) {
@@ -210,6 +219,9 @@ gst_v4l2_buffer_pool_finalize (GstV4l2BufferPool * pool)
   g_mutex_free (pool->lock);
   pool->lock = NULL;
 
+  g_async_queue_unref (pool->avail_buffers);
+  pool->avail_buffers = NULL;
+
   if (pool->video_fd >= 0)
     v4l2_close (pool->video_fd);
 
@@ -298,11 +310,13 @@ gst_v4l2_buffer_pool_new (GstElement *v4l2elem, gint fd, gint num_buffers,
   pool->type            = type;
   pool->buffer_count    = num_buffers;
   pool->buffers         = g_new0 (GstV4l2Buffer *, num_buffers);
+  pool->avail_buffers   = g_async_queue_new();
 
   for (n = 0; n < num_buffers; n++) {
     pool->buffers[n] = gst_v4l2_buffer_new (pool, n, caps);
     if (!pool->buffers[n])
       goto buffer_new_failed;
+    g_async_queue_push (pool->avail_buffers, pool->buffers[n]);
   }
 
   return pool;
@@ -374,15 +388,19 @@ gst_v4l2_buffer_pool_get (GstV4l2BufferPool *pool, gboolean blocking)
 {
   GstV4l2Buffer *buf = NULL;
 
-  GST_V4L2_BUFFER_POOL_LOCK (pool);
+  if (blocking) {
+    buf = g_async_queue_pop (pool->avail_buffers);
+  } else {
+    buf = g_async_queue_try_pop (pool->avail_buffers);
+  }
 
-// XXX implement-me
+  if (buf) {
+//XXX    pool->num_live_buffers++;
+  }
 
   // hmm.. pool->running should be TRUE after gst_v4l2src_buffer_pool_activate()..
   // but should this function set it??
   pool->running = TRUE;
-
-  GST_V4L2_BUFFER_POOL_UNLOCK (pool);
 
   return buf;
 }

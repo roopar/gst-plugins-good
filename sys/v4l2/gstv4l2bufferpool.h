@@ -55,11 +55,12 @@ struct _GstV4l2BufferPool
 
   GstElement *v4l2elem;      /* the v4l2 src/sink that owns us */
   gboolean requeuebuf;       /* if true, unusued buffers are automatically re-QBUF'd */
-  enum v4l2_buf_type type;   /* V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_BUF_TYPE_VIDEO_OUTPUT (or _OVERLAY??) */
+  enum v4l2_buf_type type;   /* V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_BUF_TYPE_VIDEO_OUTPUT */
 
   GMutex *lock;
   gboolean running;          /* with lock */
   gint num_live_buffers;     /* number of buffers not with driver (capture) or in avail buffer pool (display) */
+  GAsyncQueue* avail_buffers;/* pool of available buffers, not with the driver and which aren't held outside the bufferpool */
   gint video_fd;             /* a dup(2) of the v4l2object's video_fd */
   guint buffer_count;
   GstV4l2Buffer **buffers;

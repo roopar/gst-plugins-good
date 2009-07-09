@@ -86,6 +86,8 @@ struct _GstV4l2Object {
   /* the video buffer (mmap()'ed) */
   guint8 **buffer;
 
+  enum v4l2_buf_type type;   /* V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_BUF_TYPE_VIDEO_OUTPUT */
+
   /* the video device's capabilities */
   struct v4l2_capability vcap;
 
@@ -132,6 +134,7 @@ GType gst_v4l2_object_get_type (void);
 
 /* create/destroy */
 GstV4l2Object *	gst_v4l2_object_new 		 (GstElement * element,
+                            enum v4l2_buf_type  type,
                    				  GstV4l2GetInOutFunction get_in_out_func,
                    				  GstV4l2SetInOutFunction set_in_out_func,
 		   				  GstV4l2UpdateFpsFunction   update_fps_func);
@@ -171,8 +174,7 @@ gboolean      gst_v4l2_object_get_caps_info (GstV4l2Object *v4l2object, GstCaps 
                                              guint *fps_n, guint *fps_d, guint *size);
 
 
-// XXX replace with _get_format_list():
-gboolean gst_v4l2_object_fill_format_list  (GstV4l2Object *v4l2object);
+GSList*       gst_v4l2_object_get_format_list  (GstV4l2Object *v4l2object);
 
 GstCaps*      gst_v4l2_object_get_all_caps (void);
 

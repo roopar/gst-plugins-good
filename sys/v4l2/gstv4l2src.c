@@ -268,6 +268,7 @@ gst_v4l2src_init (GstV4l2Src * v4l2src, GstV4l2SrcClass * klass)
 {
   /* fixme: give an update_fps_function */
   v4l2src->v4l2object = gst_v4l2_object_new (GST_ELEMENT (v4l2src),
+      V4L2_BUF_TYPE_VIDEO_CAPTURE,
       gst_v4l2_get_input, gst_v4l2_set_input, NULL);
 
   /* number of buffers requested */
@@ -517,6 +518,7 @@ gst_v4l2src_get_caps (GstBaseSrc * src)
   GstV4l2Src *v4l2src = GST_V4L2SRC (src);
   GstCaps *ret;
   GSList *walk;
+  GSList *formats;
 
   if (!GST_V4L2_IS_OPEN (v4l2src->v4l2object)) {
     /* FIXME: copy? */
@@ -528,9 +530,7 @@ gst_v4l2src_get_caps (GstBaseSrc * src)
   if (v4l2src->probed_caps)
     return gst_caps_ref (v4l2src->probed_caps);
 
-  // XXX _get_format_list()..
-  if (!v4l2src->v4l2object->formats)
-    gst_v4l2_object_fill_format_list (v4l2src->v4l2object);
+  formats = gst_v4l2_object_get_format_list (v4l2src->v4l2object);
 
   ret = gst_caps_new_empty ();
 
