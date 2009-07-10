@@ -49,6 +49,8 @@
 #include "gstv4l2vidorient.h"
 
 #include "gstv4l2sink.h"
+#include "gst/gst-i18n-plugin.h"
+
 
 static const GstElementDetails gst_v4l2sink_details =
 GST_ELEMENT_DETAILS ("Video (video4linux2) Sink",
@@ -161,14 +163,23 @@ GST_BOILERPLATE_FULL (GstV4l2Sink, gst_v4l2sink, GstVideoSink, GST_TYPE_VIDEO_SI
 static void gst_v4l2sink_dispose (GObject * object);
 static void gst_v4l2sink_finalize (GstV4l2Sink * v4l2sink);
 
-/* base class methods: */
-static GstStateChangeReturn gst_v4l2sink_change_state (GstElement * element,
-    GstStateChange transition);
-
+/* GObject methods: */
 static void gst_v4l2sink_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_v4l2sink_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
+
+
+/* GstElement methods: */
+static GstStateChangeReturn gst_v4l2sink_change_state (GstElement * element,
+    GstStateChange transition);
+
+/* GstBaseSink methods: */
+static GstCaps *gst_v4l2sink_getcaps (GstBaseSink * bsink);
+static gboolean gst_v4l2sink_setcaps (GstBaseSink * bsink, GstCaps * caps);
+static GstFlowReturn gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size, GstCaps * caps, GstBuffer ** buf);
+static GstFlowReturn gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf);
+
 
 static void
 gst_v4l2sink_base_init (gpointer g_class)
@@ -194,9 +205,11 @@ gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
 {
   GObjectClass *gobject_class;
   GstElementClass *element_class;
+  GstBaseSinkClass *basesink_class;
 
   gobject_class = G_OBJECT_CLASS (klass);
   element_class = GST_ELEMENT_CLASS (klass);
+  basesink_class = GST_BASE_SINK_CLASS (klass);
 
   gobject_class->dispose = gst_v4l2sink_dispose;
   gobject_class->finalize = (GObjectFinalizeFunc) gst_v4l2sink_finalize;
@@ -211,6 +224,17 @@ gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
           "Number of buffers to be enqueud in the driver in streaming mode",
           GST_V4L2_MIN_BUFFERS, GST_V4L2_MAX_BUFFERS, PROP_DEF_QUEUE_SIZE,
           G_PARAM_READWRITE));
+
+  basesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_getcaps);
+  basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_setcaps);
+  basesink_class->buffer_alloc =
+      GST_DEBUG_FUNCPTR (gst_v4l2sink_buffer_alloc);
+//  basesink_class->get_times = GST_DEBUG_FUNCPTR (gst_v4l2sink_get_times);  ??? do we need this?
+  basesink_class->preroll = GST_DEBUG_FUNCPTR (gst_v4l2sink_show_frame);
+  basesink_class->render = GST_DEBUG_FUNCPTR (gst_v4l2sink_show_frame);
+
+
+  // XXX we probably need some thread to dqbuf, no?
 }
 
 static void
@@ -319,5 +343,77 @@ gst_v4l2sink_change_state (GstElement * element, GstStateChange transition)
 }
 
 
-// XXX implement-me!
+static GstCaps *
+gst_v4l2sink_getcaps (GstBaseSink * bsink)
+{
+//  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+
+  // XXX implement-me!
+  return NULL;
+}
+
+
+static gboolean
+gst_v4l2sink_setcaps (GstBaseSink * bsink, GstCaps * caps)
+{
+//  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+
+  // XXX implement-me!
+  return FALSE;
+}
+
+static GstFlowReturn
+gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
+    GstCaps * caps, GstBuffer ** buf)
+{
+  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  GstV4l2Buffer *v4l2buf;
+
+  if (v4l2sink->v4l2object->vcap.capabilities & V4L2_CAP_STREAMING) {
+
+    if (!v4l2sink->pool) {
+
+      GST_V4L2_CHECK_OPEN (v4l2sink->v4l2object);
+
+      if (!(v4l2sink->pool = gst_v4l2_buffer_pool_new (GST_ELEMENT (v4l2sink),
+                  v4l2sink->v4l2object->video_fd,
+                  v4l2sink->num_buffers, caps, TRUE, V4L2_BUF_TYPE_VIDEO_CAPTURE))) {
+        return GST_FLOW_ERROR;
+      }
+
+      GST_INFO_OBJECT (v4l2sink, "outputting buffers via mmap()");
+
+      if (v4l2sink->num_buffers != v4l2sink->pool->buffer_count) {
+        v4l2sink->num_buffers = v4l2sink->pool->buffer_count;
+        g_object_notify (G_OBJECT (v4l2sink), "queue-size");
+      }
+    }
+
+    v4l2buf = gst_v4l2_buffer_pool_get (v4l2sink->pool, TRUE);
+
+    if (G_UNLIKELY (!v4l2buf)) {
+      return GST_FLOW_ERROR;
+    }
+
+    *buf = GST_BUFFER (v4l2buf);
+
+    return GST_FLOW_OK;
+
+  } else {
+    /* note:  only supporting streaming mode for now..
+     */
+    return GST_FLOW_ERROR;
+  }
+}
+
+
+static GstFlowReturn
+gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
+{
+//  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+
+  // XXX implement-me!
+  return GST_FLOW_WRONG_STATE;
+}
+
 

@@ -336,11 +336,6 @@ invalid_pixelformat:
 gboolean
 gst_v4l2src_capture_init (GstV4l2Src * v4l2src, GstCaps * caps)
 {
-  gint fd = v4l2src->v4l2object->video_fd;
-  struct v4l2_requestbuffers breq;
-
-  memset (&breq, 0, sizeof (struct v4l2_requestbuffers));
-
   GST_DEBUG_OBJECT (v4l2src, "initializing the capture system");
 
   GST_V4L2_CHECK_OPEN (v4l2src->v4l2object);
@@ -348,38 +343,22 @@ gst_v4l2src_capture_init (GstV4l2Src * v4l2src, GstCaps * caps)
 
   if (v4l2src->v4l2object->vcap.capabilities & V4L2_CAP_STREAMING) {
 
-    GST_DEBUG_OBJECT (v4l2src, "STREAMING, requesting %d MMAP CAPTURE buffers",
-        v4l2src->num_buffers);
-
-    breq.count = v4l2src->num_buffers;
-    breq.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    breq.memory = V4L2_MEMORY_MMAP;
-
-    if (v4l2_ioctl (fd, VIDIOC_REQBUFS, &breq) < 0)
-      goto reqbufs_failed;
-
-    GST_LOG_OBJECT (v4l2src, " count:  %u", breq.count);
-    GST_LOG_OBJECT (v4l2src, " type:   %d", breq.type);
-    GST_LOG_OBJECT (v4l2src, " memory: %d", breq.memory);
-
-    if (breq.count < GST_V4L2_MIN_BUFFERS)
-      goto no_buffers;
-
-    if (v4l2src->num_buffers != breq.count) {
-      GST_WARNING_OBJECT (v4l2src, "using %u buffers instead", breq.count);
-      v4l2src->num_buffers = breq.count;
-      g_object_notify (G_OBJECT (v4l2src), "queue-size");
-    }
-
     /* Map the buffers */
     GST_LOG_OBJECT (v4l2src, "initiating buffer pool");
 
-    if (!(v4l2src->pool = gst_v4l2_buffer_pool_new (GST_ELEMENT (v4l2src), fd,
+    if (!(v4l2src->pool = gst_v4l2_buffer_pool_new (GST_ELEMENT (v4l2src),
+                v4l2src->v4l2object->video_fd,
                 v4l2src->num_buffers, caps, TRUE, V4L2_BUF_TYPE_VIDEO_CAPTURE)))
       goto buffer_pool_new_failed;
 
     GST_INFO_OBJECT (v4l2src, "capturing buffers via mmap()");
     v4l2src->use_mmap = TRUE;
+
+    if (v4l2src->num_buffers != v4l2src->pool->buffer_count) {
+      v4l2src->num_buffers = v4l2src->pool->buffer_count;
+      g_object_notify (G_OBJECT (v4l2src), "queue-size");
+    }
+
   } else if (v4l2src->v4l2object->vcap.capabilities & V4L2_CAP_READWRITE) {
     GST_INFO_OBJECT (v4l2src, "capturing buffers via read()");
     v4l2src->use_mmap = FALSE;
@@ -393,24 +372,6 @@ gst_v4l2src_capture_init (GstV4l2Src * v4l2src, GstCaps * caps)
   return TRUE;
 
   /* ERRORS */
-reqbufs_failed:
-  {
-    GST_ELEMENT_ERROR (v4l2src, RESOURCE, READ,
-        (_("Could not get buffers from device '%s'."),
-            v4l2src->v4l2object->videodev),
-        ("error requesting %d buffers: %s",
-            v4l2src->num_buffers, g_strerror (errno)));
-    return FALSE;
-  }
-no_buffers:
-  {
-    GST_ELEMENT_ERROR (v4l2src, RESOURCE, READ,
-        (_("Could not get enough buffers from device '%s'."),
-            v4l2src->v4l2object->videodev),
-        ("we received %d from device '%s', we want at least %d",
-            breq.count, v4l2src->v4l2object->videodev, GST_V4L2_MIN_BUFFERS));
-    return FALSE;
-  }
 buffer_pool_new_failed:
   {
     GST_ELEMENT_ERROR (v4l2src, RESOURCE, READ,

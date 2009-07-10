@@ -279,6 +279,25 @@ gst_v4l2_buffer_pool_get_type (void)
   return _gst_v4l2_buffer_pool_type;
 }
 
+
+/* this is somewhat of a hack.. but better to keep the hack in
+ * one place than copy/pasting it around..
+ */
+static GstV4l2Object *get_v4l2_object (GstElement *v4l2elem)
+{
+  GstV4l2Object *v4l2object = NULL;
+  if (GST_IS_V4L2SRC (v4l2elem)) {
+    v4l2object = (GST_V4L2SRC (v4l2elem))->v4l2object;
+  } else if (GST_IS_V4L2SINK (v4l2elem)) {
+    v4l2object = (GST_V4L2SINK (v4l2elem))->v4l2object;
+  } else {
+    GST_ERROR_OBJECT (v4l2elem, "unknown v4l2 element");
+  }
+  return v4l2object;
+}
+
+
+
 /**
  * Construct a new buffer pool
  *
@@ -298,12 +317,38 @@ gst_v4l2_buffer_pool_new (GstElement *v4l2elem, gint fd, gint num_buffers,
 {
   GstV4l2BufferPool *pool;
   gint n;
+  struct v4l2_requestbuffers breq;
+
+  memset (&breq, 0, sizeof (struct v4l2_requestbuffers));
 
   pool = (GstV4l2BufferPool *) gst_mini_object_new (GST_TYPE_V4L2_BUFFER_POOL);
 
   pool->video_fd = v4l2_dup (fd);
   if (pool->video_fd < 0)
     goto dup_failed;
+
+
+  /* first, lets request buffers, and see how many we can get: */
+  GST_DEBUG_OBJECT (v4l2elem, "STREAMING, requesting %d MMAP buffers", num_buffers);
+
+  breq.count = num_buffers;
+  breq.type = type;
+  breq.memory = V4L2_MEMORY_MMAP;
+
+  if (v4l2_ioctl (fd, VIDIOC_REQBUFS, &breq) < 0)
+    goto reqbufs_failed;
+
+  GST_LOG_OBJECT (v4l2elem, " count:  %u", breq.count);
+  GST_LOG_OBJECT (v4l2elem, " type:   %d", breq.type);
+  GST_LOG_OBJECT (v4l2elem, " memory: %d", breq.memory);
+
+  if (breq.count < GST_V4L2_MIN_BUFFERS)
+    goto no_buffers;
+
+  if (num_buffers != breq.count) {
+    GST_WARNING_OBJECT (v4l2elem, "using %u buffers instead", breq.count);
+    num_buffers = breq.count;
+  }
 
   pool->v4l2elem        = v4l2elem;
   pool->requeuebuf      = requeuebuf;
@@ -312,6 +357,7 @@ gst_v4l2_buffer_pool_new (GstElement *v4l2elem, gint fd, gint num_buffers,
   pool->buffers         = g_new0 (GstV4l2Buffer *, num_buffers);
   pool->avail_buffers   = g_async_queue_new();
 
+  /* now, map the buffers: */
   for (n = 0; n < num_buffers; n++) {
     pool->buffers[n] = gst_v4l2_buffer_new (pool, n, caps);
     if (!pool->buffers[n])
@@ -330,6 +376,26 @@ dup_failed:
 
     errno = errnosave;
 
+    return NULL;
+  }
+reqbufs_failed:
+  {
+    GstV4l2Object *v4l2object = get_v4l2_object (v4l2elem);
+    GST_ELEMENT_ERROR (v4l2elem, RESOURCE, READ,
+        (_("Could not get buffers from device '%s'."),
+            v4l2object->videodev),
+            ("error requesting %d buffers: %s",
+                num_buffers, g_strerror (errno)));
+    return NULL;
+  }
+no_buffers:
+  {
+    GstV4l2Object *v4l2object = get_v4l2_object (v4l2elem);
+    GST_ELEMENT_ERROR (v4l2elem, RESOURCE, READ,
+        (_("Could not get enough buffers from device '%s'."),
+            v4l2object->videodev),
+            ("we received %d from device '%s', we want at least %d",
+                breq.count, v4l2object->videodev, GST_V4L2_MIN_BUFFERS));
     return NULL;
   }
 buffer_new_failed:
@@ -433,18 +499,9 @@ gst_v4l2_buffer_pool_qbuf (GstV4l2BufferPool *pool, GstV4l2Buffer *buf)
 GstV4l2Buffer *
 gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool *pool)
 {
-  GstV4l2Object *v4l2object;
+  GstV4l2Object *v4l2object = get_v4l2_object (pool->v4l2elem);
   GstV4l2Buffer *pool_buffer;
   struct v4l2_buffer buffer;
-
-  if (GST_IS_V4L2SRC (pool->v4l2elem)) {
-    v4l2object = (GST_V4L2SRC (pool->v4l2elem))->v4l2object;
-  } else if (GST_IS_V4L2SINK (pool->v4l2elem)) {
-    v4l2object = (GST_V4L2SINK (pool->v4l2elem))->v4l2object;
-  } else {
-    GST_ERROR_OBJECT (pool->v4l2elem, "unknown v4l2 element");
-    return NULL;
-  }
 
   memset (&buffer, 0x00, sizeof (buffer));
   buffer.type = pool->type;

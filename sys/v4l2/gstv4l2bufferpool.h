@@ -53,7 +53,7 @@ struct _GstV4l2BufferPool
 {
   GstMiniObject parent;
 
-  GstElement *v4l2elem;      /* the v4l2 src/sink that owns us */
+  GstElement *v4l2elem;      /* the v4l2 src/sink that owns us.. maybe we should be owned by v4l2object? */
   gboolean requeuebuf;       /* if true, unusued buffers are automatically re-QBUF'd */
   enum v4l2_buf_type type;   /* V4L2_BUF_TYPE_VIDEO_CAPTURE, V4L2_BUF_TYPE_VIDEO_OUTPUT */
 
