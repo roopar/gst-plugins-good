@@ -175,8 +175,8 @@ static GstStateChangeReturn gst_v4l2sink_change_state (GstElement * element,
     GstStateChange transition);
 
 /* GstBaseSink methods: */
-static GstCaps *gst_v4l2sink_getcaps (GstBaseSink * bsink);
-static gboolean gst_v4l2sink_setcaps (GstBaseSink * bsink, GstCaps * caps);
+static GstCaps *gst_v4l2sink_get_caps (GstBaseSink * bsink);
+static gboolean gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps);
 static GstFlowReturn gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size, GstCaps * caps, GstBuffer ** buf);
 static GstFlowReturn gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf);
 
@@ -225,16 +225,13 @@ gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
           GST_V4L2_MIN_BUFFERS, GST_V4L2_MAX_BUFFERS, PROP_DEF_QUEUE_SIZE,
           G_PARAM_READWRITE));
 
-  basesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_getcaps);
-  basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_setcaps);
+  basesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_get_caps);
+  basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_set_caps);
   basesink_class->buffer_alloc =
       GST_DEBUG_FUNCPTR (gst_v4l2sink_buffer_alloc);
 //  basesink_class->get_times = GST_DEBUG_FUNCPTR (gst_v4l2sink_get_times);  ??? do we need this?
   basesink_class->preroll = GST_DEBUG_FUNCPTR (gst_v4l2sink_show_frame);
   basesink_class->render = GST_DEBUG_FUNCPTR (gst_v4l2sink_show_frame);
-
-
-  // XXX we probably need some thread to dqbuf, no?
 }
 
 static void
@@ -246,6 +243,9 @@ gst_v4l2sink_init (GstV4l2Sink * v4l2sink, GstV4l2SinkClass * klass)
 
   /* number of buffers requested */
   v4l2sink->num_buffers = PROP_DEF_QUEUE_SIZE;
+
+  v4l2sink->probed_caps  = NULL;
+  v4l2sink->current_caps = NULL;
 }
 
 
@@ -256,6 +256,10 @@ gst_v4l2sink_dispose (GObject * object)
 
   if (v4l2sink->probed_caps) {
     gst_caps_unref (v4l2sink->probed_caps);
+  }
+
+  if (v4l2sink->current_caps) {
+    gst_caps_unref (v4l2sink->current_caps);
   }
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
@@ -344,22 +348,209 @@ gst_v4l2sink_change_state (GstElement * element, GstStateChange transition)
 
 
 static GstCaps *
-gst_v4l2sink_getcaps (GstBaseSink * bsink)
+gst_v4l2sink_get_caps (GstBaseSink * bsink)
 {
-//  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  GstCaps *ret;
+  GSList *walk;
+  GSList *formats;
 
-  // XXX implement-me!
-  return NULL;
+  if (!GST_V4L2_IS_OPEN (v4l2sink->v4l2object)) {
+    /* FIXME: copy? */
+    GST_DEBUG_OBJECT (v4l2sink, "device is not open");
+    return gst_caps_copy (gst_pad_get_pad_template_caps (
+        GST_BASE_SINK_PAD (v4l2sink)));
+  }
+
+  if (v4l2sink->probed_caps) {
+    LOG_CAPS (v4l2sink, v4l2sink->probed_caps);
+    return gst_caps_ref (v4l2sink->probed_caps);
+  }
+
+  formats = gst_v4l2_object_get_format_list (v4l2sink->v4l2object);
+
+  ret = gst_caps_new_empty ();
+
+  for (walk = v4l2sink->v4l2object->formats; walk; walk = walk->next) {
+    struct v4l2_fmtdesc *format;
+
+    GstStructure *template;
+
+    format = (struct v4l2_fmtdesc *) walk->data;
+
+    template = gst_v4l2_object_v4l2fourcc_to_structure (format->pixelformat);
+
+    if (template) {
+      GstCaps *tmp;
+
+      tmp = gst_v4l2_object_probe_caps_for_format (v4l2sink->v4l2object, format->pixelformat,
+          template);
+      if (tmp)
+        gst_caps_append (ret, tmp);
+
+      gst_structure_free (template);
+    } else {
+      GST_DEBUG_OBJECT (v4l2sink, "unknown format %u", format->pixelformat);
+    }
+  }
+
+  v4l2sink->probed_caps = gst_caps_ref (ret);
+
+  GST_INFO_OBJECT (v4l2sink, "probed caps: %p", ret);
+  LOG_CAPS (v4l2sink, ret);
+
+  return ret;
 }
 
+/* the first part of this is somewhat in common with the first part of gst_v4l2src_set_capture(),
+ * so probably it should be refactored..
+ *
+ * XXX moveme..
+ */
+#include <string.h>
+#include <unistd.h>
+gboolean
+gst_v4l2_object_set_format (GstV4l2Object *v4l2object, guint32 pixelformat, guint32 width, guint32 height)
+{
+  gint fd = v4l2object->video_fd;
+  struct v4l2_format format;
+
+  GST_DEBUG_OBJECT (v4l2object->element, "Setting format to %dx%d, format "
+      "%" GST_FOURCC_FORMAT, width, height, GST_FOURCC_ARGS (pixelformat));
+
+  GST_V4L2_CHECK_OPEN (v4l2object);
+  GST_V4L2_CHECK_NOT_ACTIVE (v4l2object);
+
+  memset (&format, 0x00, sizeof (struct v4l2_format));
+  format.type = v4l2object->type;
+
+  if (v4l2_ioctl (fd, VIDIOC_G_FMT, &format) < 0)
+    goto get_fmt_failed;
+
+  format.type = v4l2object->type;
+  format.fmt.pix.width = width;
+  format.fmt.pix.height = height;
+  format.fmt.pix.pixelformat = pixelformat;
+  /* request whole frames; change when gstreamer supports interlaced video
+   * (INTERLACED mode returns frames where the fields have already been
+   *  combined, there are other modes for requesting fields individually) */
+  format.fmt.pix.field = V4L2_FIELD_INTERLACED;
+
+  if (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) < 0) {
+    if (errno != EINVAL)
+      goto set_fmt_failed;
+
+    GST_DEBUG_OBJECT (v4l2object->element, "trying again...");
+
+    /* try again with progressive video */
+    format.fmt.pix.width = width;
+    format.fmt.pix.height = height;
+    format.fmt.pix.pixelformat = pixelformat;
+    format.fmt.pix.field = V4L2_FIELD_NONE;
+    if (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) < 0)
+      goto set_fmt_failed;
+  }
+
+  if (format.fmt.pix.width != width || format.fmt.pix.height != height)
+    goto invalid_dimensions;
+
+  if (format.fmt.pix.pixelformat != pixelformat)
+    goto invalid_pixelformat;
+
+  return TRUE;
+
+  /* ERRORS */
+get_fmt_failed:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' does not support video capture"),
+            v4l2object->videodev),
+        ("Call to G_FMT failed: (%s)", g_strerror (errno)));
+    return FALSE;
+  }
+set_fmt_failed:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' cannot capture at %dx%d"),
+            v4l2object->videodev, width, height),
+        ("Call to S_FMT failed for %" GST_FOURCC_FORMAT " @ %dx%d: %s",
+            GST_FOURCC_ARGS (pixelformat), width, height, g_strerror (errno)));
+    return FALSE;
+  }
+invalid_dimensions:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' cannot capture at %dx%d"),
+            v4l2object->videodev, width, height),
+        ("Tried to capture at %dx%d, but device returned size %dx%d",
+            width, height, format.fmt.pix.width, format.fmt.pix.height));
+    return FALSE;
+  }
+invalid_pixelformat:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' cannot capture in the specified format"),
+            v4l2object->videodev),
+        ("Tried to capture in %" GST_FOURCC_FORMAT
+            ", but device returned format" " %" GST_FOURCC_FORMAT,
+            GST_FOURCC_ARGS (pixelformat),
+            GST_FOURCC_ARGS (format.fmt.pix.pixelformat)));
+    return FALSE;
+  }
+}
 
 static gboolean
-gst_v4l2sink_setcaps (GstBaseSink * bsink, GstCaps * caps)
+gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
 {
-//  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  gint w = 0, h = 0;
+  struct v4l2_fmtdesc *format;
+  guint fps_n, fps_d;
+  guint size;
 
-  // XXX implement-me!
-  return FALSE;
+  LOG_CAPS (v4l2sink, caps);
+
+  if (!GST_V4L2_IS_OPEN (v4l2sink->v4l2object)) {
+    GST_DEBUG_OBJECT (v4l2sink, "device is not open");
+    return FALSE;
+  }
+
+  if (v4l2sink->current_caps) {
+    GST_DEBUG_OBJECT (v4l2sink, "already have caps set.. are they equal?");
+    LOG_CAPS (v4l2sink, v4l2sink->current_caps);
+    if (gst_caps_is_equal (v4l2sink->current_caps, caps)) {
+      GST_DEBUG_OBJECT (v4l2sink, "yes they are!");
+      return TRUE;
+    }
+    GST_DEBUG_OBJECT (v4l2sink, "no they aren't!");
+  } else {
+    v4l2sink->current_caps = gst_caps_ref (caps);
+  }
+
+  /* if we've already allocated buffers, we probably need to
+   * do something here to free and reallocate....
+   */
+  if (v4l2sink->pool) {
+    /* STREAMOFF */
+    /* gst_v4l2_buffer_pool_destroy() */
+    GST_DEBUG_OBJECT (v4l2sink, "warning, changing caps not supported yet");
+    return FALSE;
+  }
+
+  /* we want our own v4l2 type of fourcc codes */
+  if (!gst_v4l2_object_get_caps_info (v4l2sink->v4l2object, caps,
+      &format, &w, &h, &fps_n, &fps_d, &size)) {
+    GST_DEBUG_OBJECT (v4l2sink,
+        "can't get capture format from caps %p", caps);
+    return FALSE;
+  }
+
+  if (!gst_v4l2_object_set_format (v4l2sink->v4l2object, format->pixelformat, w, h)) {
+    /* error already posted */
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 static GstFlowReturn
@@ -373,11 +564,23 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 
     if (!v4l2sink->pool) {
 
+      /* set_caps() might not be called yet.. so just to make sure: */
+      if (!gst_v4l2sink_set_caps (bsink, caps)) {
+        return GST_FLOW_ERROR;
+      }
+
       GST_V4L2_CHECK_OPEN (v4l2sink->v4l2object);
 
       if (!(v4l2sink->pool = gst_v4l2_buffer_pool_new (GST_ELEMENT (v4l2sink),
                   v4l2sink->v4l2object->video_fd,
-                  v4l2sink->num_buffers, caps, TRUE, V4L2_BUF_TYPE_VIDEO_CAPTURE))) {
+                  v4l2sink->num_buffers, caps, TRUE, V4L2_BUF_TYPE_VIDEO_OUTPUT))) {
+        return GST_FLOW_ERROR;
+      }
+
+      if (v4l2_ioctl (v4l2sink->v4l2object->video_fd, VIDIOC_STREAMON, &(v4l2sink->v4l2object->type)) < 0) {
+        GST_ELEMENT_ERROR (v4l2sink, RESOURCE, OPEN_READ,
+            (_("Error starting streaming capture from device '%s'."),
+                v4l2sink->v4l2object->videodev), GST_ERROR_SYSTEM);
         return GST_FLOW_ERROR;
       }
 
@@ -390,6 +593,7 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     }
 
     v4l2buf = gst_v4l2_buffer_pool_get (v4l2sink->pool, TRUE);
+printf("v4l2buf=%p\n", v4l2buf);
 
     if (G_UNLIKELY (!v4l2buf)) {
       return GST_FLOW_ERROR;
@@ -400,8 +604,7 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     return GST_FLOW_OK;
 
   } else {
-    /* note:  only supporting streaming mode for now..
-     */
+    GST_ERROR_OBJECT (v4l2sink, "only supporting streaming mode for now...");
     return GST_FLOW_ERROR;
   }
 }
@@ -410,10 +613,29 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 static GstFlowReturn
 gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
 {
-//  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+printf("buf=%p\n", buf);
 
-  // XXX implement-me!
-  return GST_FLOW_WRONG_STATE;
+  if (!GST_IS_V4L2_BUFFER (buf)) {
+    GST_DEBUG_OBJECT (v4l2sink, "hmm, I got a %s", g_type_name (G_OBJECT_TYPE (buf)));
+    GST_DEBUG_OBJECT (v4l2sink, "implement me!!  I guess I need to copy the frame!!");
+    return GST_FLOW_ERROR;
+  }
+
+  if (!gst_v4l2_buffer_pool_qbuf (v4l2sink->pool, GST_V4L2_BUFFER (buf))) {
+    return GST_FLOW_ERROR;
+  }
+
+  /* lets try to DQBUF the last frame.. I'm not sure yet if we should do
+   * this here, or a background thread.. but this seems like a good spot
+   * for now..
+   */
+  buf = GST_BUFFER (gst_v4l2_buffer_pool_dqbuf (v4l2sink->pool));
+  if (buf) {
+    gst_buffer_unref (buf);
+  }
+
+  return GST_FLOW_OK;
 }
 
 

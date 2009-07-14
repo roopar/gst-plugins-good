@@ -54,7 +54,8 @@ struct _GstV4l2Sink {
 
   /*< private >*/
   GstV4l2Object * v4l2object;
-  GstCaps *probed_caps;         /* (XXX do we need this?) */
+  GstCaps *probed_caps;         /* all supported caps of underlying v4l2 device */
+  GstCaps *current_caps;        /* the current negotiated caps */
   GstV4l2BufferPool *pool;
   guint32 num_buffers;
 };

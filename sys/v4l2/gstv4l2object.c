@@ -38,6 +38,10 @@
 #include "gst/gst-i18n-plugin.h"
 
 
+GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
+#define GST_CAT_DEFAULT v4l2_debug
+
+
 #define DEFAULT_PROP_DEVICE		"/dev/video0"
 #define DEFAULT_PROP_DEVICE_NAME 	NULL
 #define DEFAULT_PROP_DEVICE_FD          -1
@@ -453,7 +457,12 @@ gst_v4l2_set_defaults (GstV4l2Object * v4l2object)
 {
   GstTunerNorm *norm = NULL;
   GstTunerChannel *channel = NULL;
-  GstTuner *tuner = GST_TUNER (v4l2object->element);
+  GstTuner *tuner;
+
+  if (!GST_IS_TUNER (v4l2object->element))
+    return;
+
+  tuner = GST_TUNER (v4l2object->element);
 
   if (v4l2object->norm)
     norm = gst_tuner_find_norm_by_name (tuner, v4l2object->norm);

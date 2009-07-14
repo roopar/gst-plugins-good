@@ -37,8 +37,9 @@
 #include "gst/gst-i18n-plugin.h"
 
 
-GST_DEBUG_CATEGORY_EXTERN (v4l2buffer_debug);
-#define GST_CAT_DEFAULT v4l2buffer_debug
+GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
+#define GST_CAT_DEFAULT v4l2_debug
+
 
 /*
  * GstV4l2Buffer:
@@ -251,8 +252,6 @@ gst_v4l2_buffer_pool_class_init (gpointer g_class, gpointer class_data)
 
   mini_object_class->finalize = (GstMiniObjectFinalizeFunction)
       gst_v4l2_buffer_pool_finalize;
-
-  GST_DEBUG_CATEGORY_INIT (v4l2buffer_debug, "v4l2buffer", 0, "V4L2 Buffer Debug");
 }
 
 GType
@@ -319,8 +318,6 @@ gst_v4l2_buffer_pool_new (GstElement *v4l2elem, gint fd, gint num_buffers,
   gint n;
   struct v4l2_requestbuffers breq;
 
-  memset (&breq, 0, sizeof (struct v4l2_requestbuffers));
-
   pool = (GstV4l2BufferPool *) gst_mini_object_new (GST_TYPE_V4L2_BUFFER_POOL);
 
   pool->video_fd = v4l2_dup (fd);
@@ -331,8 +328,9 @@ gst_v4l2_buffer_pool_new (GstElement *v4l2elem, gint fd, gint num_buffers,
   /* first, lets request buffers, and see how many we can get: */
   GST_DEBUG_OBJECT (v4l2elem, "STREAMING, requesting %d MMAP buffers", num_buffers);
 
-  breq.count = num_buffers;
+  memset (&breq, 0, sizeof (struct v4l2_requestbuffers));
   breq.type = type;
+  breq.count = num_buffers;
   breq.memory = V4L2_MEMORY_MMAP;
 
   if (v4l2_ioctl (fd, VIDIOC_REQBUFS, &breq) < 0)
@@ -530,8 +528,6 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool *pool)
         buffer.sequence, buffer.index, buffer.flags,
         pool->num_live_buffers, pool_buffer);
 
-    /* we have the  buffer now, mark the spot in the pool empty */
-    pool->buffers[buffer.index] = NULL;
     pool->num_live_buffers++;
 
     GST_V4L2_BUFFER_POOL_UNLOCK (pool);
