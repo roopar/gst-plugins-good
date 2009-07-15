@@ -241,6 +241,13 @@ gst_v4l2sink_init (GstV4l2Sink * v4l2sink, GstV4l2SinkClass * klass)
       V4L2_BUF_TYPE_VIDEO_OUTPUT,
       gst_v4l2_get_input, gst_v4l2_set_input, NULL);
 
+  /* same default value for video output device as is used for
+   * v4l2src/capture is no good..  so lets set a saner default
+   * (which can be overridden by the one creating the v4l2sink
+   * after the constructor returns)
+   */
+  g_object_set (v4l2sink, "device", "/dev/video1", NULL);
+
   /* number of buffers requested */
   v4l2sink->num_buffers = PROP_DEF_QUEUE_SIZE;
 
@@ -523,8 +530,6 @@ gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
       return TRUE;
     }
     GST_DEBUG_OBJECT (v4l2sink, "no they aren't!");
-  } else {
-    v4l2sink->current_caps = gst_caps_ref (caps);
   }
 
   /* if we've already allocated buffers, we probably need to
@@ -545,10 +550,17 @@ gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
     return FALSE;
   }
 
+  if (!format) {
+    GST_DEBUG_OBJECT (v4l2sink, "unrecognized caps!!");
+    return FALSE;
+  }
+
   if (!gst_v4l2_object_set_format (v4l2sink->v4l2object, format->pixelformat, w, h)) {
     /* error already posted */
     return FALSE;
   }
+
+  v4l2sink->current_caps = gst_caps_ref (caps);
 
   return TRUE;
 }

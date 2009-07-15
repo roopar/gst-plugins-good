@@ -612,7 +612,7 @@ gst_v4l2_object_get_format_from_fourcc (GstV4l2Object * v4l2object, guint32 four
   if (fourcc == 0)
     return NULL;
 
-  walk = v4l2object->formats;
+  walk = gst_v4l2_object_get_format_list (v4l2object);
   while (walk) {
     fmt = (struct v4l2_fmtdesc *) walk->data;
     if (fmt->pixelformat == fourcc)
