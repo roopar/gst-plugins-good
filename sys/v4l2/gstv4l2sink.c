@@ -573,7 +573,7 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 
       if (!(v4l2sink->pool = gst_v4l2_buffer_pool_new (GST_ELEMENT (v4l2sink),
                   v4l2sink->v4l2object->video_fd,
-                  v4l2sink->num_buffers, caps, TRUE, V4L2_BUF_TYPE_VIDEO_OUTPUT))) {
+                  v4l2sink->num_buffers, caps, FALSE, V4L2_BUF_TYPE_VIDEO_OUTPUT))) {
         return GST_FLOW_ERROR;
       }
 
@@ -593,7 +593,8 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     }
 
     v4l2buf = gst_v4l2_buffer_pool_get (v4l2sink->pool, TRUE);
-printf("v4l2buf=%p\n", v4l2buf);
+
+    GST_DEBUG_OBJECT (v4l2sink, "allocated buffer: %p\n", v4l2buf);
 
     if (G_UNLIKELY (!v4l2buf)) {
       return GST_FLOW_ERROR;
@@ -614,25 +615,25 @@ static GstFlowReturn
 gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
 {
   GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
-printf("buf=%p\n", buf);
+
+  GST_DEBUG_OBJECT (v4l2sink, "render buffer: %p\n", buf);
 
   if (!GST_IS_V4L2_BUFFER (buf)) {
-    GST_DEBUG_OBJECT (v4l2sink, "hmm, I got a %s", g_type_name (G_OBJECT_TYPE (buf)));
-    GST_DEBUG_OBJECT (v4l2sink, "implement me!!  I guess I need to copy the frame!!");
-    return GST_FLOW_ERROR;
+    GstV4l2Buffer *v4l2buf = gst_v4l2_buffer_pool_get (v4l2sink->pool, TRUE);
+    GST_DEBUG_OBJECT (v4l2sink, "slow-path.. I got a %s so I need to memcpy",
+        g_type_name (G_OBJECT_TYPE (buf)));
+    memcpy (GST_BUFFER_DATA (v4l2buf),
+        GST_BUFFER_DATA (buf),
+        MIN (GST_BUFFER_SIZE (v4l2buf), GST_BUFFER_SIZE (buf)));
+    GST_DEBUG_OBJECT (v4l2sink, "render copied buffer: %p\n", v4l2buf);
+    buf = GST_BUFFER (v4l2buf);
   }
+
+  // XXX probably need to incr reference count, and then decr when the
+  //     buffer is dqbuf'd??
 
   if (!gst_v4l2_buffer_pool_qbuf (v4l2sink->pool, GST_V4L2_BUFFER (buf))) {
     return GST_FLOW_ERROR;
-  }
-
-  /* lets try to DQBUF the last frame.. I'm not sure yet if we should do
-   * this here, or a background thread.. but this seems like a good spot
-   * for now..
-   */
-  buf = GST_BUFFER (gst_v4l2_buffer_pool_dqbuf (v4l2sink->pool));
-  if (buf) {
-    gst_buffer_unref (buf);
   }
 
   return GST_FLOW_OK;
