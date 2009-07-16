@@ -59,7 +59,7 @@ struct _GstV4l2BufferPool
 
   GMutex *lock;
   gboolean running;          /* with lock */
-  gint num_live_buffers;     /* number of buffers not with driver (capture) or in avail buffer pool (display) */
+  gint num_live_buffers;     /* number of buffers not with driver (capture) or not in avail buffer pool (display) */
   GAsyncQueue* avail_buffers;/* pool of available buffers, not with the driver and which aren't held outside the bufferpool */
   gint video_fd;             /* a dup(2) of the v4l2object's video_fd */
   guint buffer_count;

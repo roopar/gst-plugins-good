@@ -648,6 +648,8 @@ gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
     return GST_FLOW_ERROR;
   }
 
+  gst_buffer_ref (buf);
+
   return GST_FLOW_OK;
 }
 

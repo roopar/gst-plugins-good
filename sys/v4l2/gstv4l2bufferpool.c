@@ -478,6 +478,7 @@ gst_v4l2_buffer_pool_get (GstV4l2BufferPool *pool, gboolean blocking)
   if (buf) {
     pool->num_live_buffers++;
     GST_DEBUG_OBJECT (pool->v4l2elem, "num_live_buffers++: %d", pool->num_live_buffers);
+    GST_BUFFER_SIZE (buf) = buf->vbuffer.length;
   }
 
   // hmm.. pool->running should be TRUE after gst_v4l2src_buffer_pool_activate()..
