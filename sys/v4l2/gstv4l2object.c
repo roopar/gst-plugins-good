@@ -42,7 +42,6 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
 #define GST_CAT_DEFAULT v4l2_debug
 
 
-#define DEFAULT_PROP_DEVICE		"/dev/video0"
 #define DEFAULT_PROP_DEVICE_NAME 	NULL
 #define DEFAULT_PROP_DEVICE_FD          -1
 #define DEFAULT_PROP_FLAGS              0
@@ -241,11 +240,11 @@ gst_v4l2_device_get_type (void)
 }
 
 void
-gst_v4l2_object_install_properties_helper (GObjectClass * gobject_class)
+gst_v4l2_object_install_properties_helper (GObjectClass * gobject_class, const char *default_device)
 {
   g_object_class_install_property (gobject_class, PROP_DEVICE,
       g_param_spec_string ("device", "Device", "Device location",
-          DEFAULT_PROP_DEVICE, G_PARAM_READWRITE));
+          default_device, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_DEVICE_NAME,
       g_param_spec_string ("device-name", "Device name",
           "Name of the device", DEFAULT_PROP_DEVICE_NAME, G_PARAM_READABLE));
@@ -261,6 +260,7 @@ gst_v4l2_object_install_properties_helper (GObjectClass * gobject_class)
 GstV4l2Object *
 gst_v4l2_object_new (GstElement * element,
     enum v4l2_buf_type  type,
+    char *default_device,
     GstV4l2GetInOutFunction get_in_out_func,
     GstV4l2SetInOutFunction set_in_out_func,
     GstV4l2UpdateFpsFunction update_fps_func)
@@ -283,7 +283,7 @@ gst_v4l2_object_new (GstElement * element,
   v4l2object->video_fd = -1;
   v4l2object->poll = gst_poll_new (TRUE);
   v4l2object->buffer = NULL;
-  v4l2object->videodev = g_strdup (DEFAULT_PROP_DEVICE);
+  v4l2object->videodev = g_strdup (default_device);
 
   v4l2object->norms = NULL;
   v4l2object->channels = NULL;
@@ -1040,7 +1040,7 @@ gst_v4l2_object_get_all_caps (void)
     }
   }
 
-  return caps;
+  return gst_caps_ref (caps);
 }
 
 

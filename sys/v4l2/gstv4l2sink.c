@@ -62,6 +62,7 @@ GST_DEBUG_CATEGORY (v4l2sink_debug);
 #define GST_CAT_DEFAULT v4l2sink_debug
 
 #define PROP_DEF_QUEUE_SIZE         8
+#define DEFAULT_PROP_DEVICE   "/dev/video1"
 
 enum
 {
@@ -199,7 +200,6 @@ gst_v4l2sink_base_init (gpointer g_class)
           gst_v4l2_object_get_all_caps ()));
 }
 
-
 static void
 gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
 {
@@ -218,7 +218,7 @@ gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
 
   element_class->change_state = gst_v4l2sink_change_state;
 
-  gst_v4l2_object_install_properties_helper (gobject_class);
+  gst_v4l2_object_install_properties_helper (gobject_class, DEFAULT_PROP_DEVICE);
   g_object_class_install_property (gobject_class, PROP_QUEUE_SIZE,
       g_param_spec_uint ("queue-size", "Queue size",
           "Number of buffers to be enqueud in the driver in streaming mode",
@@ -238,7 +238,7 @@ static void
 gst_v4l2sink_init (GstV4l2Sink * v4l2sink, GstV4l2SinkClass * klass)
 {
   v4l2sink->v4l2object = gst_v4l2_object_new (GST_ELEMENT (v4l2sink),
-      V4L2_BUF_TYPE_VIDEO_OUTPUT,
+      V4L2_BUF_TYPE_VIDEO_OUTPUT, DEFAULT_PROP_DEVICE,
       gst_v4l2_get_input, gst_v4l2_set_input, NULL);
 
   /* same default value for video output device as is used for

@@ -72,6 +72,8 @@ GST_DEBUG_CATEGORY (v4l2src_debug);
 #define PROP_DEF_QUEUE_SIZE         2
 #define PROP_DEF_ALWAYS_COPY        TRUE
 
+#define DEFAULT_PROP_DEVICE   "/dev/video0"
+
 enum
 {
   PROP_0,
@@ -239,7 +241,7 @@ gst_v4l2src_class_init (GstV4l2SrcClass * klass)
 
   element_class->change_state = gst_v4l2src_change_state;
 
-  gst_v4l2_object_install_properties_helper (gobject_class);
+  gst_v4l2_object_install_properties_helper (gobject_class, DEFAULT_PROP_DEVICE);
   g_object_class_install_property (gobject_class, PROP_QUEUE_SIZE,
       g_param_spec_uint ("queue-size", "Queue size",
           "Number of buffers to be enqueud in the driver in streaming mode",
@@ -268,7 +270,7 @@ gst_v4l2src_init (GstV4l2Src * v4l2src, GstV4l2SrcClass * klass)
 {
   /* fixme: give an update_fps_function */
   v4l2src->v4l2object = gst_v4l2_object_new (GST_ELEMENT (v4l2src),
-      V4L2_BUF_TYPE_VIDEO_CAPTURE,
+      V4L2_BUF_TYPE_VIDEO_CAPTURE, DEFAULT_PROP_DEVICE,
       gst_v4l2_get_input, gst_v4l2_set_input, NULL);
 
   /* number of buffers requested */
@@ -405,6 +407,8 @@ gst_v4l2src_negotiate (GstBaseSrc * basesrc)
   /* first see what is possible on our source pad */
   thiscaps = gst_pad_get_caps (GST_BASE_SRC_PAD (basesrc));
   GST_DEBUG_OBJECT (basesrc, "caps of src: %" GST_PTR_FORMAT, thiscaps);
+  LOG_CAPS (basesrc, thiscaps);
+
   /* nothing or anything is allowed, we're done */
   if (thiscaps == NULL || gst_caps_is_any (thiscaps))
     goto no_nego_needed;
@@ -412,6 +416,7 @@ gst_v4l2src_negotiate (GstBaseSrc * basesrc)
   /* get the peer caps */
   peercaps = gst_pad_peer_get_caps (GST_BASE_SRC_PAD (basesrc));
   GST_DEBUG_OBJECT (basesrc, "caps of peer: %" GST_PTR_FORMAT, peercaps);
+  LOG_CAPS (basesrc, peercaps);
   if (peercaps && !gst_caps_is_any (peercaps)) {
     GstCaps *icaps = NULL;
     int i;
@@ -422,6 +427,7 @@ gst_v4l2src_negotiate (GstBaseSrc * basesrc)
       GstCaps *ipcaps = gst_caps_copy_nth (peercaps, i);
 
       GST_DEBUG_OBJECT (basesrc, "peer: %" GST_PTR_FORMAT, ipcaps);
+      LOG_CAPS (basesrc, ipcaps);
 
       icaps = gst_caps_intersect (thiscaps, ipcaps);
       gst_caps_unref (ipcaps);
@@ -434,6 +440,7 @@ gst_v4l2src_negotiate (GstBaseSrc * basesrc)
     }
 
     GST_DEBUG_OBJECT (basesrc, "intersect: %" GST_PTR_FORMAT, icaps);
+    LOG_CAPS (basesrc, icaps);
     if (icaps) {
       /* If there are multiple intersections pick the one with the smallest
        * resolution strictly bigger then the first peer caps */
@@ -488,6 +495,7 @@ gst_v4l2src_negotiate (GstBaseSrc * basesrc)
     if (!gst_caps_is_empty (caps)) {
       gst_pad_fixate_caps (GST_BASE_SRC_PAD (basesrc), caps);
       GST_DEBUG_OBJECT (basesrc, "fixated to: %" GST_PTR_FORMAT, caps);
+      LOG_CAPS (basesrc, caps);
 
       if (gst_caps_is_any (caps)) {
         /* hmm, still anything, so element can do anything and
