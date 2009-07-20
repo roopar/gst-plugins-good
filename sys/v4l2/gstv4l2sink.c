@@ -589,12 +589,16 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
         return GST_FLOW_ERROR;
       }
 
+#ifdef OMAPZOOM
       if (v4l2_ioctl (v4l2sink->v4l2object->video_fd, VIDIOC_STREAMON, &(v4l2sink->v4l2object->type)) < 0) {
         GST_ELEMENT_ERROR (v4l2sink, RESOURCE, OPEN_READ,
             (_("Error starting streaming capture from device '%s'."),
                 v4l2sink->v4l2object->videodev), GST_ERROR_SYSTEM);
         return GST_FLOW_ERROR;
       }
+#else
+      v4l2sink->streamon = TRUE;
+#endif
 
       GST_INFO_OBJECT (v4l2sink, "outputting buffers via mmap()");
 
@@ -627,28 +631,55 @@ static GstFlowReturn
 gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
 {
   GstV4l2Sink *v4l2sink = GST_V4L2SINK (bsink);
+  GstBuffer *newbuf = NULL;
 
   GST_DEBUG_OBJECT (v4l2sink, "render buffer: %p\n", buf);
 
   if (!GST_IS_V4L2_BUFFER (buf)) {
-    GstV4l2Buffer *v4l2buf = gst_v4l2_buffer_pool_get (v4l2sink->pool, TRUE);
+    GstFlowReturn ret;
+
     GST_DEBUG_OBJECT (v4l2sink, "slow-path.. I got a %s so I need to memcpy",
         g_type_name (G_OBJECT_TYPE (buf)));
-    memcpy (GST_BUFFER_DATA (v4l2buf),
+
+    ret = gst_v4l2sink_buffer_alloc (bsink,
+        GST_BUFFER_OFFSET (buf), GST_BUFFER_SIZE (buf), GST_BUFFER_CAPS (buf),
+        &newbuf);
+
+    if (GST_FLOW_OK != ret) {
+      return ret;
+    }
+
+    memcpy (GST_BUFFER_DATA (newbuf),
         GST_BUFFER_DATA (buf),
-        MIN (GST_BUFFER_SIZE (v4l2buf), GST_BUFFER_SIZE (buf)));
-    GST_DEBUG_OBJECT (v4l2sink, "render copied buffer: %p\n", v4l2buf);
-    buf = GST_BUFFER (v4l2buf);
+        MIN (GST_BUFFER_SIZE (newbuf), GST_BUFFER_SIZE (buf)));
+
+    GST_DEBUG_OBJECT (v4l2sink, "render copied buffer: %p\n", newbuf);
+
+    buf = newbuf;
   }
 
   // XXX probably need to incr reference count, and then decr when the
   //     buffer is dqbuf'd??
 
+#ifndef OMAPZOOM
+  if (v4l2sink->streamon) {
+    if (v4l2_ioctl (v4l2sink->v4l2object->video_fd, VIDIOC_STREAMON, &(v4l2sink->v4l2object->type)) < 0) {
+      GST_ELEMENT_ERROR (v4l2sink, RESOURCE, OPEN_READ,
+          (_("Error starting streaming capture from device '%s'."),
+              v4l2sink->v4l2object->videodev), GST_ERROR_SYSTEM);
+      return GST_FLOW_ERROR;
+    }
+    v4l2sink->streamon = FALSE;
+  }
+#endif
+
   if (!gst_v4l2_buffer_pool_qbuf (v4l2sink->pool, GST_V4L2_BUFFER (buf))) {
     return GST_FLOW_ERROR;
   }
 
-  gst_buffer_ref (buf);
+  if (!newbuf) {
+    gst_buffer_ref (buf);
+  }
 
   return GST_FLOW_OK;
 }

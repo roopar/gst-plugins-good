@@ -168,4 +168,11 @@ gboolean        gst_v4l2_get_capabilities       (GstV4l2Object * v4l2object);
   } G_STMT_END
 #endif
 
+/* note: the omapzoom kernel v4l2 display driver deviates from the v4l2 API
+ * spec in a few areas.  For example, we must always have one buffer with
+ * the driver before STREAMON until after STREAMOFF.  And some interfaces,
+ * such as rotation (and mirroring?) are different.
+ */
+#define OMAPZOOM
+
 #endif /* __V4L2_CALLS_H__ */

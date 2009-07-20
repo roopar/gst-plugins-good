@@ -58,6 +58,10 @@ struct _GstV4l2Sink {
   GstCaps *current_caps;        /* the current negotiated caps */
   GstV4l2BufferPool *pool;
   guint32 num_buffers;
+
+#ifndef OMAPZOOM
+  gboolean streamon;
+#endif
 };
 
 struct _GstV4l2SinkClass {

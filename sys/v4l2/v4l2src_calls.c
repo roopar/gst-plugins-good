@@ -104,6 +104,8 @@ gst_v4l2src_grab_frame (GstV4l2Src * v4l2src, GstBuffer ** buf)
   v4l2object = v4l2src->v4l2object;
   pool = v4l2src->pool;
 
+  GST_DEBUG_OBJECT (v4l2src, "grab frame");
+
   for (;;) {
     ret = gst_poll_wait (v4l2object->poll, GST_CLOCK_TIME_NONE);
     if (G_UNLIKELY (ret < 0)) {

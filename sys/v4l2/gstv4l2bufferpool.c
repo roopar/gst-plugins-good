@@ -472,8 +472,10 @@ gst_v4l2_buffer_pool_get (GstV4l2BufferPool *pool, gboolean blocking)
         gst_buffer_unref (GST_BUFFER (buf));
         buf = NULL;
       }
+    } else {
+      break;
     }
-  } while (!buf);
+  } while (1);
 
   if (buf) {
     pool->num_live_buffers++;
@@ -618,7 +620,6 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool *pool)
 
   return NULL;
 }
-
 
 gint
 gst_v4l2_buffer_pool_available_buffers (GstV4l2BufferPool *pool)

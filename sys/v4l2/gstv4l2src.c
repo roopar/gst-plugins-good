@@ -875,7 +875,6 @@ static GstFlowReturn
 gst_v4l2src_create (GstPushSrc * src, GstBuffer ** buf)
 {
   GstV4l2Src *v4l2src = GST_V4L2SRC (src);
-
   GstFlowReturn ret;
 
   if (v4l2src->use_mmap) {
