@@ -51,6 +51,8 @@
 #include "gstv4l2sink.h"
 #include "gst/gst-i18n-plugin.h"
 
+#include <string.h>
+
 
 static const GstElementDetails gst_v4l2sink_details =
 GST_ELEMENT_DETAILS ("Video (video4linux2) Sink",
@@ -323,6 +325,7 @@ gst_v4l2sink_sync_overlay_fields (GstV4l2Sink *v4l2sink)
     gint fd = v4l2sink->v4l2object->video_fd;
     struct v4l2_format format;
 
+    memset (&format, 0x00, sizeof (struct v4l2_format));
     format.type = V4L2_BUF_TYPE_VIDEO_OVERLAY;
 
     g_return_if_fail (v4l2_ioctl (fd, VIDIOC_G_FMT, &format) >= 0);
@@ -504,103 +507,6 @@ gst_v4l2sink_get_caps (GstBaseSink * bsink)
   LOG_CAPS (v4l2sink, ret);
 
   return ret;
-}
-
-/* the first part of this is somewhat in common with the first part of gst_v4l2src_set_capture(),
- * so probably it should be refactored..
- *
- * XXX moveme..
- */
-#include <string.h>
-#include <unistd.h>
-gboolean
-gst_v4l2_object_set_format (GstV4l2Object *v4l2object, guint32 pixelformat, guint32 width, guint32 height)
-{
-  gint fd = v4l2object->video_fd;
-  struct v4l2_format format;
-
-  GST_DEBUG_OBJECT (v4l2object->element, "Setting format to %dx%d, format "
-      "%" GST_FOURCC_FORMAT, width, height, GST_FOURCC_ARGS (pixelformat));
-
-  GST_V4L2_CHECK_OPEN (v4l2object);
-  GST_V4L2_CHECK_NOT_ACTIVE (v4l2object);
-
-  memset (&format, 0x00, sizeof (struct v4l2_format));
-  format.type = v4l2object->type;
-
-  if (v4l2_ioctl (fd, VIDIOC_G_FMT, &format) < 0)
-    goto get_fmt_failed;
-
-  format.type = v4l2object->type;
-  format.fmt.pix.width = width;
-  format.fmt.pix.height = height;
-  format.fmt.pix.pixelformat = pixelformat;
-  /* request whole frames; change when gstreamer supports interlaced video
-   * (INTERLACED mode returns frames where the fields have already been
-   *  combined, there are other modes for requesting fields individually) */
-  format.fmt.pix.field = V4L2_FIELD_INTERLACED;
-
-  if (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) < 0) {
-    if (errno != EINVAL)
-      goto set_fmt_failed;
-
-    GST_DEBUG_OBJECT (v4l2object->element, "trying again...");
-
-    /* try again with progressive video */
-    format.fmt.pix.width = width;
-    format.fmt.pix.height = height;
-    format.fmt.pix.pixelformat = pixelformat;
-    format.fmt.pix.field = V4L2_FIELD_NONE;
-    if (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) < 0)
-      goto set_fmt_failed;
-  }
-
-  if (format.fmt.pix.width != width || format.fmt.pix.height != height)
-    goto invalid_dimensions;
-
-  if (format.fmt.pix.pixelformat != pixelformat)
-    goto invalid_pixelformat;
-
-  return TRUE;
-
-  /* ERRORS */
-get_fmt_failed:
-  {
-    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
-        (_("Device '%s' does not support video capture"),
-            v4l2object->videodev),
-        ("Call to G_FMT failed: (%s)", g_strerror (errno)));
-    return FALSE;
-  }
-set_fmt_failed:
-  {
-    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
-        (_("Device '%s' cannot capture at %dx%d"),
-            v4l2object->videodev, width, height),
-        ("Call to S_FMT failed for %" GST_FOURCC_FORMAT " @ %dx%d: %s",
-            GST_FOURCC_ARGS (pixelformat), width, height, g_strerror (errno)));
-    return FALSE;
-  }
-invalid_dimensions:
-  {
-    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
-        (_("Device '%s' cannot capture at %dx%d"),
-            v4l2object->videodev, width, height),
-        ("Tried to capture at %dx%d, but device returned size %dx%d",
-            width, height, format.fmt.pix.width, format.fmt.pix.height));
-    return FALSE;
-  }
-invalid_pixelformat:
-  {
-    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
-        (_("Device '%s' cannot capture in the specified format"),
-            v4l2object->videodev),
-        ("Tried to capture in %" GST_FOURCC_FORMAT
-            ", but device returned format" " %" GST_FOURCC_FORMAT,
-            GST_FOURCC_ARGS (pixelformat),
-            GST_FOURCC_ARGS (format.fmt.pix.pixelformat)));
-    return FALSE;
-  }
 }
 
 static gboolean

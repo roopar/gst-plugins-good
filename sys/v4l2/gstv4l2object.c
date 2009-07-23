@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Library General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
- * USA. 
+ * USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -94,7 +94,7 @@ gst_v4l2_class_probe_devices (GstElementClass * klass, gboolean check,
     }
 
     /*
-     * detect /dev entries 
+     * detect /dev entries
      */
     for (n = 0; n < 64; n++) {
       for (base = 0; dev_base[base] != NULL; base++) {
@@ -104,11 +104,11 @@ gst_v4l2_class_probe_devices (GstElementClass * klass, gboolean check,
             n);
 
         /*
-         * does the /dev/ entry exist at all? 
+         * does the /dev/ entry exist at all?
          */
         if (stat (device, &s) == 0) {
           /*
-           * yes: is a device attached? 
+           * yes: is a device attached?
            */
           if (S_ISCHR (s.st_mode)) {
 
@@ -268,7 +268,7 @@ gst_v4l2_object_new (GstElement * element,
   GstV4l2Object *v4l2object;
 
   /*
-   * some default values 
+   * some default values
    */
   v4l2object = g_new0 (GstV4l2Object, 1);
 
@@ -1676,3 +1676,93 @@ gst_v4l2_object_get_nearest_size (GstV4l2Object* v4l2object, guint32 pixelformat
   return TRUE;
 }
 
+
+gboolean
+gst_v4l2_object_set_format (GstV4l2Object *v4l2object, guint32 pixelformat, guint32 width, guint32 height)
+{
+  gint fd = v4l2object->video_fd;
+  struct v4l2_format format;
+
+  GST_DEBUG_OBJECT (v4l2object->element, "Setting format to %dx%d, format "
+      "%" GST_FOURCC_FORMAT, width, height, GST_FOURCC_ARGS (pixelformat));
+
+  GST_V4L2_CHECK_OPEN (v4l2object);
+  GST_V4L2_CHECK_NOT_ACTIVE (v4l2object);
+
+  memset (&format, 0x00, sizeof (struct v4l2_format));
+  format.type = v4l2object->type;
+
+  if (v4l2_ioctl (fd, VIDIOC_G_FMT, &format) < 0)
+    goto get_fmt_failed;
+
+  format.type = v4l2object->type;
+  format.fmt.pix.width = width;
+  format.fmt.pix.height = height;
+  format.fmt.pix.pixelformat = pixelformat;
+  /* request whole frames; change when gstreamer supports interlaced video
+   * (INTERLACED mode returns frames where the fields have already been
+   *  combined, there are other modes for requesting fields individually) */
+  format.fmt.pix.field = V4L2_FIELD_INTERLACED;
+
+  if (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) < 0) {
+    if (errno != EINVAL)
+      goto set_fmt_failed;
+
+    GST_DEBUG_OBJECT (v4l2object->element, "trying again...");
+
+    /* try again with progressive video */
+    format.fmt.pix.width = width;
+    format.fmt.pix.height = height;
+    format.fmt.pix.pixelformat = pixelformat;
+    format.fmt.pix.field = V4L2_FIELD_NONE;
+    if (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) < 0)
+      goto set_fmt_failed;
+  }
+
+  if (format.fmt.pix.width != width || format.fmt.pix.height != height)
+    goto invalid_dimensions;
+
+  if (format.fmt.pix.pixelformat != pixelformat)
+    goto invalid_pixelformat;
+
+  return TRUE;
+
+  /* ERRORS */
+get_fmt_failed:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' does not support video capture"),
+            v4l2object->videodev),
+        ("Call to G_FMT failed: (%s)", g_strerror (errno)));
+    return FALSE;
+  }
+set_fmt_failed:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' cannot capture at %dx%d"),
+            v4l2object->videodev, width, height),
+        ("Call to S_FMT failed for %" GST_FOURCC_FORMAT " @ %dx%d: %s",
+            GST_FOURCC_ARGS (pixelformat), width, height, g_strerror (errno)));
+    return FALSE;
+  }
+invalid_dimensions:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' cannot capture at %dx%d"),
+            v4l2object->videodev, width, height),
+        ("Tried to capture at %dx%d, but device returned size %dx%d",
+            width, height, format.fmt.pix.width, format.fmt.pix.height));
+    return FALSE;
+  }
+invalid_pixelformat:
+  {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, SETTINGS,
+        (_("Device '%s' cannot capture in the specified format"),
+            v4l2object->videodev),
+        ("Tried to capture in %" GST_FOURCC_FORMAT
+            ", but device returned format" " %" GST_FOURCC_FORMAT,
+            GST_FOURCC_ARGS (pixelformat),
+            GST_FOURCC_ARGS (format.fmt.pix.pixelformat)));
+    return FALSE;
+  }
+}

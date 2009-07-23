@@ -182,6 +182,7 @@ GstCaps*      gst_v4l2_object_get_all_caps (void);
 
 GstStructure* gst_v4l2_object_v4l2fourcc_to_structure (guint32 fourcc);
 
+gboolean      gst_v4l2_object_set_format (GstV4l2Object *v4l2object, guint32 pixelformat, guint32 width, guint32 height);
 
 
 #define GST_IMPLEMENT_V4L2_PROBE_METHODS(Type_Class, interface_as_function)                 \
