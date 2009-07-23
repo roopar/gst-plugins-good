@@ -68,8 +68,13 @@ enum
 {
   PROP_0,
   V4L2_STD_OBJECT_PROPS,
-  PROP_QUEUE_SIZE
+  PROP_QUEUE_SIZE,
+  PROP_OVERLAY_TOP,
+  PROP_OVERLAY_LEFT,
+  PROP_OVERLAY_WIDTH,
+  PROP_OVERLAY_HEIGHT,
 };
+
 
 GST_IMPLEMENT_V4L2_PROBE_METHODS (GstV4l2SinkClass, gst_v4l2sink);
 GST_IMPLEMENT_V4L2_COLOR_BALANCE_METHODS (GstV4l2Sink, gst_v4l2sink);
@@ -224,6 +229,26 @@ gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
           "Number of buffers to be enqueud in the driver in streaming mode",
           GST_V4L2_MIN_BUFFERS, GST_V4L2_MAX_BUFFERS, PROP_DEF_QUEUE_SIZE,
           G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_OVERLAY_TOP,
+      g_param_spec_int ("overlay-top", "Overlay top",
+          "The topmost (y) coordinate of the video overlay; top left corner of screen is 0,0",
+          0x80000000, 0x7fffffff, 0,
+          G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_OVERLAY_LEFT,
+      g_param_spec_int ("overlay-left", "Overlay left",
+          "The leftmost (x) coordinate of the video overlay; top left corner of screen is 0,0",
+          0x80000000, 0x7fffffff, 0,
+          G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_OVERLAY_WIDTH,
+      g_param_spec_uint ("overlay-width", "Overlay width",
+          "The width of the video overlay; default is equal to negotiated image width",
+          0, 0xffffffff, 0,
+          G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_OVERLAY_HEIGHT,
+      g_param_spec_uint ("overlay-height", "Overlay height",
+          "The height of the video overlay; default is equal to negotiated image height",
+          0, 0xffffffff, 0,
+          G_PARAM_READWRITE));
 
   basesink_class->get_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_get_caps);
   basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_set_caps);
@@ -282,6 +307,45 @@ gst_v4l2sink_finalize (GstV4l2Sink * v4l2sink)
 }
 
 
+
+enum {
+  OVERLAY_TOP_SET    = 0x01,
+  OVERLAY_LEFT_SET   = 0x02,
+  OVERLAY_WIDTH_SET  = 0x04,
+  OVERLAY_HEIGHT_SET = 0x08
+};
+
+static void
+gst_v4l2sink_sync_overlay_fields (GstV4l2Sink *v4l2sink)
+{
+  if (GST_V4L2_IS_OPEN (v4l2sink->v4l2object)) {
+
+    gint fd = v4l2sink->v4l2object->video_fd;
+    struct v4l2_format format;
+
+    format.type = V4L2_BUF_TYPE_VIDEO_OVERLAY;
+
+    g_return_if_fail (v4l2_ioctl (fd, VIDIOC_G_FMT, &format) >= 0);
+
+    if (v4l2sink->overlay_fields_set) {
+      if (v4l2sink->overlay_fields_set & OVERLAY_TOP_SET)
+        format.fmt.win.w.top = v4l2sink->overlay.top;
+      if (v4l2sink->overlay_fields_set & OVERLAY_LEFT_SET)
+        format.fmt.win.w.left = v4l2sink->overlay.left;
+      if (v4l2sink->overlay_fields_set & OVERLAY_WIDTH_SET)
+        format.fmt.win.w.width = v4l2sink->overlay.width;
+      if (v4l2sink->overlay_fields_set & OVERLAY_HEIGHT_SET)
+        format.fmt.win.w.height = v4l2sink->overlay.height;
+
+      g_return_if_fail (v4l2_ioctl (fd, VIDIOC_S_FMT, &format) >= 0);
+      v4l2sink->overlay_fields_set = 0;
+    }
+
+    v4l2sink->overlay = format.fmt.win.w;
+  }
+}
+
+
 static void
 gst_v4l2sink_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
@@ -293,6 +357,26 @@ gst_v4l2sink_set_property (GObject * object,
     switch (prop_id) {
       case PROP_QUEUE_SIZE:
         v4l2sink->num_buffers = g_value_get_uint (value);
+        break;
+      case PROP_OVERLAY_TOP:
+        v4l2sink->overlay.top = g_value_get_int (value);
+        v4l2sink->overlay_fields_set |= OVERLAY_TOP_SET;
+        gst_v4l2sink_sync_overlay_fields (v4l2sink);
+        break;
+      case PROP_OVERLAY_LEFT:
+        v4l2sink->overlay.left = g_value_get_int (value);
+        v4l2sink->overlay_fields_set |= OVERLAY_LEFT_SET;
+        gst_v4l2sink_sync_overlay_fields (v4l2sink);
+        break;
+      case PROP_OVERLAY_WIDTH:
+        v4l2sink->overlay.width = g_value_get_uint (value);
+        v4l2sink->overlay_fields_set |= OVERLAY_WIDTH_SET;
+        gst_v4l2sink_sync_overlay_fields (v4l2sink);
+        break;
+      case PROP_OVERLAY_HEIGHT:
+        v4l2sink->overlay.height = g_value_get_uint (value);
+        v4l2sink->overlay_fields_set |= OVERLAY_HEIGHT_SET;
+        gst_v4l2sink_sync_overlay_fields (v4l2sink);
         break;
       default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -313,6 +397,19 @@ gst_v4l2sink_get_property (GObject * object,
     switch (prop_id) {
       case PROP_QUEUE_SIZE:
         g_value_set_uint (value, v4l2sink->num_buffers);
+        break;
+      case PROP_OVERLAY_TOP:
+        g_value_set_int (value, v4l2sink->overlay.top);
+        break;
+      case PROP_OVERLAY_LEFT:
+        g_value_set_int (value, v4l2sink->overlay.left);
+        break;
+      case PROP_OVERLAY_WIDTH:
+        g_value_set_uint (value, v4l2sink->overlay.width);
+        break;
+      case PROP_OVERLAY_HEIGHT:
+        g_value_set_uint (value, v4l2sink->overlay.height);
+        break;
         break;
       default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -559,6 +656,8 @@ gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
     /* error already posted */
     return FALSE;
   }
+
+  gst_v4l2sink_sync_overlay_fields (v4l2sink);
 
   v4l2sink->current_caps = gst_caps_ref (caps);
 
