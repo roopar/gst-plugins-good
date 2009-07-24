@@ -280,6 +280,9 @@ gst_v4l2sink_init (GstV4l2Sink * v4l2sink, GstV4l2SinkClass * klass)
 
   v4l2sink->probed_caps  = NULL;
   v4l2sink->current_caps = NULL;
+
+  v4l2sink->overlay_fields_set = 0;
+  v4l2sink->state = 0;
 }
 
 
@@ -309,7 +312,19 @@ gst_v4l2sink_finalize (GstV4l2Sink * v4l2sink)
 }
 
 
+/**
+ * State values
+ */
+enum {
+  STATE_OFF = 0,
+  STATE_PENDING_STREAMON,
+  STATE_STREAMING
+};
 
+/**
+ * flags to indicate which overlay properties the user has set (and therefore
+ * which ones should override the defaults from the driver)
+ */
 enum {
   OVERLAY_TOP_SET    = 0x01,
   OVERLAY_LEFT_SET   = 0x02,
@@ -421,12 +436,15 @@ gst_v4l2sink_get_property (GObject * object,
   }
 }
 
-
 static GstStateChangeReturn
 gst_v4l2sink_change_state (GstElement * element, GstStateChange transition)
 {
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
   GstV4l2Sink *v4l2sink = GST_V4L2SINK (element);
+
+  GST_DEBUG_OBJECT (v4l2sink, "%d -> %d",
+      GST_STATE_TRANSITION_CURRENT (transition),
+      GST_STATE_TRANSITION_NEXT (transition));
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
@@ -441,6 +459,14 @@ gst_v4l2sink_change_state (GstElement * element, GstStateChange transition)
   ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
 
   switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      if (v4l2sink->state == STATE_STREAMING) {
+        if (!gst_v4l2_object_stop_streaming (v4l2sink->v4l2object)) {
+          return GST_STATE_CHANGE_FAILURE;
+        }
+        v4l2sink->state = STATE_OFF;
+      }
+      break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       /* close the device */
       if (!gst_v4l2_object_stop (v4l2sink->v4l2object))
@@ -595,14 +621,12 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
       }
 
 #ifdef OMAPZOOM
-      if (v4l2_ioctl (v4l2sink->v4l2object->video_fd, VIDIOC_STREAMON, &(v4l2sink->v4l2object->type)) < 0) {
-        GST_ELEMENT_ERROR (v4l2sink, RESOURCE, OPEN_READ,
-            (_("Error starting streaming capture from device '%s'."),
-                v4l2sink->v4l2object->videodev), GST_ERROR_SYSTEM);
+      if (!gst_v4l2_object_start_streaming (v4l2sink->v4l2object)) {
         return GST_FLOW_ERROR;
       }
+      v4l2sink->state = STATE_STREAMING;
 #else
-      v4l2sink->streamon = TRUE;
+      v4l2sink->state = STATE_PENDING_STREAMON;
 #endif
 
       GST_INFO_OBJECT (v4l2sink, "outputting buffers via mmap()");
@@ -667,14 +691,11 @@ gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
   //     buffer is dqbuf'd??
 
 #ifndef OMAPZOOM
-  if (v4l2sink->streamon) {
-    if (v4l2_ioctl (v4l2sink->v4l2object->video_fd, VIDIOC_STREAMON, &(v4l2sink->v4l2object->type)) < 0) {
-      GST_ELEMENT_ERROR (v4l2sink, RESOURCE, OPEN_READ,
-          (_("Error starting streaming capture from device '%s'."),
-              v4l2sink->v4l2object->videodev), GST_ERROR_SYSTEM);
+  if (v4l2sink->state == STATE_PENDING_STREAMON) {
+    if (!gst_v4l2_object_start_streaming (v4l2sink->v4l2object)) {
       return GST_FLOW_ERROR;
     }
-    v4l2sink->streamon = FALSE;
+    v4l2sink->state = STATE_STREAMING;
   }
 #endif
 

@@ -184,6 +184,9 @@ GstStructure* gst_v4l2_object_v4l2fourcc_to_structure (guint32 fourcc);
 
 gboolean      gst_v4l2_object_set_format (GstV4l2Object *v4l2object, guint32 pixelformat, guint32 width, guint32 height);
 
+gboolean      gst_v4l2_object_start_streaming (GstV4l2Object *v4l2object);
+gboolean      gst_v4l2_object_stop_streaming (GstV4l2Object *v4l2object);
+
 
 #define GST_IMPLEMENT_V4L2_PROBE_METHODS(Type_Class, interface_as_function)                 \
                                                                                             \

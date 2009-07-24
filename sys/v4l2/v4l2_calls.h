@@ -172,7 +172,10 @@ gboolean        gst_v4l2_get_capabilities       (GstV4l2Object * v4l2object);
  * spec in a few areas.  For example, we must always have one buffer with
  * the driver before STREAMON until after STREAMOFF.  And some interfaces,
  * such as rotation (and mirroring?) are different.
+ *
+ * this is only a temporary hack, as we should switch to the new driver soon
  */
 #define OMAPZOOM
+
 
 #endif /* __V4L2_CALLS_H__ */

@@ -1766,3 +1766,29 @@ invalid_pixelformat:
     return FALSE;
   }
 }
+
+gboolean
+gst_v4l2_object_start_streaming (GstV4l2Object *v4l2object)
+{
+  if (v4l2_ioctl (v4l2object->video_fd, VIDIOC_STREAMON, &(v4l2object->type)) < 0) {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, OPEN_READ,
+        (_("Error starting streaming on device '%s'."),
+            v4l2object->videodev), GST_ERROR_SYSTEM);
+    return FALSE;
+  }
+  return TRUE;
+}
+
+gboolean
+gst_v4l2_object_stop_streaming (GstV4l2Object *v4l2object)
+{
+  if (v4l2_ioctl (v4l2object->video_fd, VIDIOC_STREAMOFF, &(v4l2object->type)) < 0) {
+    GST_ELEMENT_ERROR (v4l2object->element, RESOURCE, OPEN_READ,
+        (_("Error stopping streaming on device '%s'."),
+            v4l2object->videodev), GST_ERROR_SYSTEM);
+    return FALSE;
+  }
+  return TRUE;
+}
+
+

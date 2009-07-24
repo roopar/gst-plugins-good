@@ -325,9 +325,6 @@ no_supported_capture_method:
 gboolean
 gst_v4l2src_capture_start (GstV4l2Src * v4l2src)
 {
-  gint type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  gint fd = v4l2src->v4l2object->video_fd;
-
   GST_DEBUG_OBJECT (v4l2src, "starting the capturing");
   //GST_V4L2_CHECK_OPEN (v4l2src->v4l2object);
   GST_V4L2_CHECK_ACTIVE (v4l2src->v4l2object);
@@ -335,30 +332,18 @@ gst_v4l2src_capture_start (GstV4l2Src * v4l2src)
   v4l2src->quit = FALSE;
 
   if (v4l2src->use_mmap) {
-    if (!gst_v4l2src_buffer_pool_activate (v4l2src->pool, v4l2src))
-      goto pool_activate_failed;
+    if (!gst_v4l2src_buffer_pool_activate (v4l2src->pool, v4l2src)) {
+      return FALSE;
+    }
 
-    if (v4l2_ioctl (fd, VIDIOC_STREAMON, &type) < 0)
-      goto streamon_failed;
+    if (!gst_v4l2_object_start_streaming (v4l2src->v4l2object)) {
+      return FALSE;
+    }
   }
 
   v4l2src->is_capturing = TRUE;
 
   return TRUE;
-
-  /* ERRORS */
-pool_activate_failed:
-  {
-    /* already errored */
-    return FALSE;
-  }
-streamon_failed:
-  {
-    GST_ELEMENT_ERROR (v4l2src, RESOURCE, OPEN_READ,
-        (_("Error starting streaming capture from device '%s'."),
-            v4l2src->v4l2object->videodev), GST_ERROR_SYSTEM);
-    return FALSE;
-  }
 }
 
 /******************************************************
@@ -369,8 +354,6 @@ streamon_failed:
 gboolean
 gst_v4l2src_capture_stop (GstV4l2Src * v4l2src)
 {
-  gint type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-
   GST_DEBUG_OBJECT (v4l2src, "stopping capturing");
 
   if (!GST_V4L2_IS_OPEN (v4l2src->v4l2object)) {
@@ -383,8 +366,9 @@ gst_v4l2src_capture_stop (GstV4l2Src * v4l2src)
   if (v4l2src->use_mmap) {
     /* we actually need to sync on all queued buffers but not
      * on the non-queued ones */
-    if (v4l2_ioctl (v4l2src->v4l2object->video_fd, VIDIOC_STREAMOFF, &type) < 0)
-      goto streamoff_failed;
+    if (!gst_v4l2_object_stop_streaming (v4l2src->v4l2object)) {
+      return FALSE;
+    }
   }
 
 done:
@@ -394,15 +378,6 @@ done:
   v4l2src->is_capturing = FALSE;
 
   return TRUE;
-
-  /* ERRORS */
-streamoff_failed:
-  {
-    GST_ELEMENT_ERROR (v4l2src, RESOURCE, CLOSE,
-        (_("Error stopping streaming capture from device '%s'."),
-            v4l2src->v4l2object->videodev), GST_ERROR_SYSTEM);
-    return FALSE;
-  }
 }
 
 /******************************************************

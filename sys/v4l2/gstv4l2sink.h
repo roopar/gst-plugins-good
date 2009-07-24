@@ -71,9 +71,7 @@ struct _GstV4l2Sink {
    */
   guint8 overlay_fields_set;
 
-#ifndef OMAPZOOM
-  gboolean streamon;
-#endif
+  guint8 state;
 };
 
 struct _GstV4l2SinkClass {
