@@ -256,7 +256,6 @@ gst_v4l2sink_class_init (GstV4l2SinkClass * klass)
   basesink_class->set_caps = GST_DEBUG_FUNCPTR (gst_v4l2sink_set_caps);
   basesink_class->buffer_alloc =
       GST_DEBUG_FUNCPTR (gst_v4l2sink_buffer_alloc);
-//  basesink_class->get_times = GST_DEBUG_FUNCPTR (gst_v4l2sink_get_times);  ??? do we need this?
   basesink_class->preroll = GST_DEBUG_FUNCPTR (gst_v4l2sink_show_frame);
   basesink_class->render = GST_DEBUG_FUNCPTR (gst_v4l2sink_show_frame);
 }
@@ -561,12 +560,14 @@ gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
     GST_DEBUG_OBJECT (v4l2sink, "no they aren't!");
   }
 
-  /* if we've already allocated buffers, we probably need to
-   * do something here to free and reallocate....
-   */
   if (v4l2sink->pool) {
-    /* STREAMOFF */
-    /* gst_v4l2_buffer_pool_destroy() */
+    /* TODO: if we've already allocated buffers, we probably need to
+     * do something here to free and reallocate....
+     *
+     *   gst_v4l2_object_stop_streaming()
+     *   gst_v4l2_buffer_pool_destroy()
+     *
+     */
     GST_DEBUG_OBJECT (v4l2sink, "warning, changing caps not supported yet");
     return FALSE;
   }
@@ -596,6 +597,7 @@ gst_v4l2sink_set_caps (GstBaseSink * bsink, GstCaps * caps)
   return TRUE;
 }
 
+/** buffer alloc function to implement pad_alloc for upstream element */
 static GstFlowReturn
 gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
     GstCaps * caps, GstBuffer ** buf)
@@ -605,7 +607,8 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
 
   if (v4l2sink->v4l2object->vcap.capabilities & V4L2_CAP_STREAMING) {
 
-    if (!v4l2sink->pool) {
+    /* initialize the buffer pool if not initialized yet (first buffer): */
+    if (G_UNLIKELY (!v4l2sink->pool)) {
 
       /* set_caps() might not be called yet.. so just to make sure: */
       if (!gst_v4l2sink_set_caps (bsink, caps)) {
@@ -655,7 +658,7 @@ gst_v4l2sink_buffer_alloc (GstBaseSink * bsink, guint64 offset, guint size,
   }
 }
 
-
+/** called after A/V sync to render frame */
 static GstFlowReturn
 gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
 {
@@ -686,9 +689,6 @@ gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
 
     buf = newbuf;
   }
-
-  // XXX probably need to incr reference count, and then decr when the
-  //     buffer is dqbuf'd??
 
 #ifndef OMAPZOOM
   if (v4l2sink->state == STATE_PENDING_STREAMON) {

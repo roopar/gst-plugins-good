@@ -483,8 +483,6 @@ gst_v4l2_buffer_pool_get (GstV4l2BufferPool *pool, gboolean blocking)
     GST_BUFFER_SIZE (buf) = buf->vbuffer.length;
   }
 
-  // hmm.. pool->running should be TRUE after gst_v4l2src_buffer_pool_activate()..
-  // but should this function set it??
   pool->running = TRUE;
 
 
