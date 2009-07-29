@@ -427,7 +427,6 @@ gst_v4l2sink_get_property (GObject * object,
       case PROP_OVERLAY_HEIGHT:
         g_value_set_uint (value, v4l2sink->overlay.height);
         break;
-        break;
       default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
         break;
@@ -690,6 +689,10 @@ gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
     buf = newbuf;
   }
 
+  if (!gst_v4l2_buffer_pool_qbuf (v4l2sink->pool, GST_V4L2_BUFFER (buf))) {
+    return GST_FLOW_ERROR;
+  }
+
 #ifndef OMAPZOOM
   if (v4l2sink->state == STATE_PENDING_STREAMON) {
     if (!gst_v4l2_object_start_streaming (v4l2sink->v4l2object)) {
@@ -698,10 +701,6 @@ gst_v4l2sink_show_frame (GstBaseSink *bsink, GstBuffer *buf)
     v4l2sink->state = STATE_STREAMING;
   }
 #endif
-
-  if (!gst_v4l2_buffer_pool_qbuf (v4l2sink->pool, GST_V4L2_BUFFER (buf))) {
-    return GST_FLOW_ERROR;
-  }
 
   if (!newbuf) {
     gst_buffer_ref (buf);
